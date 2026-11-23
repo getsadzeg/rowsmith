@@ -7,10 +7,16 @@ import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.PgType;
 import io.github.rowsmith.internal.schema.Typmod;
 import io.github.rowsmith.internal.sql.ColumnRules;
+import io.github.rowsmith.internal.sql.ColumnRules.TruncUnit;
 import io.github.rowsmith.internal.sql.SqlValues;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -54,6 +60,9 @@ public final class ValueGenerator {
             case INT2, INT4, INT8, NUMERIC, FLOAT, MONEY -> number(col, kind, typmod, rules, n, req);
             case TEXT, CHAR -> text(col, kind, typmod, rules, n, top ? req.uniqueness() : Uniqueness.NONE);
             case UUID -> new UUID(0, n);
+            case DATE, TIMESTAMP, TIMESTAMPTZ -> temporal(col, kind, rules, n, req);
+            case TIME, TIMETZ -> time(col, n, req);
+            case INTERVAL -> n + " days";
             case ENUM, BOOL -> throw new IllegalStateException("handled as allowed values");
             default -> throw new RowsmithException(ErrorCode.UNSUPPORTED_TYPE, "cannot generate a value of type " + type.castName
                     + " for column " + col.qualifiedName() + HINT + ", or give the column a DEFAULT");
@@ -215,6 +224,105 @@ public final class ValueGenerator {
 
     private static BigDecimal min(BigDecimal a, BigDecimal b) {
         return a == null ? b : b == null ? a : a.min(b);
+    }
+
+    private record Step(long amount, ChronoUnit unit) {
+        static Step of(TruncUnit truncUnit, boolean isDate) {
+            if (truncUnit == null) return new Step(1, ChronoUnit.DAYS);
+            return switch (truncUnit) {
+                case YEAR -> new Step(1, ChronoUnit.YEARS);
+                case QUARTER -> new Step(3, ChronoUnit.MONTHS);
+                case MONTH -> new Step(1, ChronoUnit.MONTHS);
+                case WEEK -> new Step(1, ChronoUnit.WEEKS);
+                case DAY -> new Step(1, ChronoUnit.DAYS);
+                case HOUR -> new Step(1, isDate ? ChronoUnit.DAYS : ChronoUnit.HOURS);
+                case MINUTE -> new Step(1, isDate ? ChronoUnit.DAYS : ChronoUnit.MINUTES);
+                case SECOND -> new Step(1, isDate ? ChronoUnit.DAYS : ChronoUnit.SECONDS);
+            };
+        }
+
+        LocalDateTime plus(LocalDateTime t, long times) {
+            return t.plus(amount * times, unit);
+        }
+
+        LocalDateTime ceil(LocalDateTime t, TruncUnit truncUnit) {
+            if (truncUnit == null) return t;
+            LocalDateTime tr = truncate(t, truncUnit);
+            return tr.isBefore(t) ? truncate(plus(tr, 1), truncUnit) : tr;
+        }
+
+        LocalDateTime floor(LocalDateTime t, TruncUnit truncUnit) {
+            return truncUnit == null ? t : truncate(t, truncUnit);
+        }
+    }
+
+    private Object temporal(ColumnDef col, TypeKind kind, ColumnRules rules, long n, Request req) {
+        boolean isDate = kind == TypeKind.DATE;
+        long unitSeconds = isDate ? ChronoUnit.DAYS.getDuration().getSeconds() : 1;
+        LocalDateTime lo = dt(rules.lo, rules.loInclusive, unitSeconds, true);
+        LocalDateTime hi = dt(rules.hi, rules.hiInclusive, unitSeconds, false);
+        if (isDate) {
+            if (lo != null) lo = lo.toLocalDate().atStartOfDay().isBefore(lo) ? lo.toLocalDate().plusDays(1).atStartOfDay() : lo;
+            if (hi != null) hi = hi.toLocalDate().atStartOfDay();
+        }
+        Step step = Step.of(rules.truncUnit, isDate);
+        if (lo != null) lo = step.ceil(lo, rules.truncUnit);
+        if (hi != null) hi = step.floor(hi, rules.truncUnit);
+        if (lo != null && hi != null && lo.isAfter(hi)) {
+            throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "no date/time fits the constraints on column " + col.qualifiedName() + HINT);
+        }
+        LocalDateTime first = step.ceil(step.plus(clock.today().atStartOfDay(), 1), rules.truncUnit);
+        boolean down = hi != null && hi.isBefore(first) && (lo == null || lo.isBefore(first));
+        LocalDateTime start = down ? hi : lo != null && lo.isAfter(first) ? lo : first;
+        LocalDateTime end = down ? lo : hi;
+        long index = n - 1;
+        if (end != null) {
+            long count = Math.abs(step.unit().between(start, end)) / step.amount() + 1;
+            if (index >= count) {
+                if (req.uniqueness() == Uniqueness.ALONE) {
+                    throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "column " + col.qualifiedName() + " is unique but its constraints allow only "
+                            + count + " values, so row " + n + " has none left" + HINT);
+                }
+                index %= count;
+            }
+        }
+        LocalDateTime t = step.plus(start, down ? -index : index);
+        if (isDate) return t.toLocalDate();
+        if (kind == TypeKind.TIMESTAMPTZ) return clock.toOffset(t);
+        return t;
+    }
+
+    private static LocalTime time(ColumnDef col, long n, Request req) {
+        long count = ChronoUnit.DAYS.getDuration().toSeconds();
+        if (n > count && req.uniqueness() == Uniqueness.ALONE) {
+            throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "column " + col.qualifiedName() + " is unique but a day has only "
+                    + count + " seconds, so row " + n + " has no time left" + HINT);
+        }
+        return LocalTime.ofSecondOfDay(n % count);
+    }
+
+    private static LocalDateTime truncate(LocalDateTime t, TruncUnit unit) {
+        return switch (unit) {
+            case YEAR -> t.toLocalDate().withDayOfYear(1).atStartOfDay();
+            case QUARTER -> t.toLocalDate().withMonth((t.getMonthValue() - 1) / 3 * 3 + 1).withDayOfMonth(1).atStartOfDay();
+            case MONTH -> t.toLocalDate().withDayOfMonth(1).atStartOfDay();
+            case WEEK -> t.toLocalDate().minusDays(t.getDayOfWeek().getValue() - 1L).atStartOfDay();
+            case DAY -> t.toLocalDate().atStartOfDay();
+            case HOUR -> t.truncatedTo(ChronoUnit.HOURS);
+            case MINUTE -> t.truncatedTo(ChronoUnit.MINUTES);
+            case SECOND -> t.truncatedTo(ChronoUnit.SECONDS);
+        };
+    }
+
+    private LocalDateTime dt(Object v, boolean inclusive, long unitSeconds, boolean lower) {
+        LocalDateTime t = switch (v) {
+            case LocalDateTime x -> x;
+            case LocalDate d -> d.atStartOfDay();
+            case OffsetDateTime o -> LocalDateTime.ofInstant(o.toInstant(), clock.zone());
+            case null, default -> null;
+        };
+        if (t == null || inclusive) return t;
+        return lower ? t.plusSeconds(unitSeconds) : t.minusSeconds(unitSeconds);
     }
 
     private Object text(ColumnDef col, TypeKind kind, int typmod, ColumnRules rules, long n, Uniqueness u) {
