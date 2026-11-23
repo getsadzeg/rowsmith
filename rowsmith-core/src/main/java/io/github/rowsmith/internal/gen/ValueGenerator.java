@@ -1,5 +1,8 @@
 package io.github.rowsmith.internal.gen;
 
+import com.github.curiousoddman.rgxgen.RgxGen;
+import com.github.curiousoddman.rgxgen.config.RgxGenOption;
+import com.github.curiousoddman.rgxgen.config.RgxGenProperties;
 import io.github.rowsmith.ErrorCode;
 import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.internal.config.RowsmithClock;
@@ -21,10 +24,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.SplittableRandom;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class ValueGenerator {
 
@@ -35,12 +44,32 @@ public final class ValueGenerator {
     }
 
     public record Request(ColumnRules rules, long number, Uniqueness uniqueness) {}
+
+    private static final int MAX_UNBOUNDED_REPEAT = 3;
     private static final int DEFAULT_SCALE = 2;
     private static final Character ANY_CHAR = null;
     private static final String HINT = "; set it in the test or with RowsmithSetup.value(...)";
+    private static final Pattern POSIX_CLASS = Pattern.compile("\\[:([^:\\]]*):\\]");
+    private static final Map<String, String> POSIX_CLASSES = Map.ofEntries(
+            Map.entry("alpha", "A-Za-z"),
+            Map.entry("digit", "0-9"),
+            Map.entry("alnum", "A-Za-z0-9"),
+            Map.entry("upper", "A-Z"),
+            Map.entry("lower", "a-z"),
+            Map.entry("xdigit", "0-9A-Fa-f"),
+            Map.entry("word", "A-Za-z0-9_"),
+            Map.entry("blank", " \t"),
+            Map.entry("space", " \t\n\r\f\u000B"),
+            Map.entry("punct", "!-/:-@\\[-`{-~"),
+            Map.entry("graph", "!-~"),
+            Map.entry("print", " -~"));
+
     private final RowsmithClock clock;
+    private final RgxGenProperties regexProperties = new RgxGenProperties();
+
     public ValueGenerator(RowsmithClock clock) {
         this.clock = clock;
+        RgxGenOption.INFINITE_PATTERN_REPETITION.setInProperties(regexProperties, MAX_UNBOUNDED_REPEAT);
     }
 
     public Object generate(ColumnDef col, Request req) {
@@ -345,6 +374,12 @@ public final class ValueGenerator {
                 throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "no value of column " + col.qualifiedName() + " matches LIKE '" + pattern
                         + "' within " + minLen + " to " + maxLen + " characters" + HINT);
             }
+        } else if (!rules.regexes.isEmpty()) {
+            s = fromRegex(col, rules.regexes.get(0), n);
+            if (s.codePointCount(0, s.length()) > maxLen) {
+                throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "the match \"" + s + "\" of the regex '" + rules.regexes.get(0)
+                        + "' is longer than column " + col.qualifiedName() + " allows (" + maxLen + " characters)" + HINT);
+            }
         } else {
             boolean fixedWidth = kind == TypeKind.CHAR && maxLen < Integer.MAX_VALUE;
             int width = fixedWidth ? maxLen : minLen;
@@ -454,5 +489,34 @@ public final class ValueGenerator {
 
     private static boolean isAnyChar(Character c) {
         return c == null;
+    }
+
+    private String fromRegex(ColumnDef col, String regex, long n) {
+        String re = regex;
+        if (re.startsWith("^")) re = re.substring(1);
+        if (re.endsWith("$") && !re.endsWith("\\$")) re = re.substring(0, re.length() - 1);
+        re = withoutPosixClasses(col, regex, re);
+        try {
+            Random random = Random.from(new SplittableRandom(Objects.hash(col.table().qualifiedName(), col.name, n)));
+            return RgxGen.parse(regexProperties, re).generate(random);
+        } catch (RuntimeException e) {
+            throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "cannot generate a value of column " + col.qualifiedName()
+                    + " matching the regex '" + regex + "' (" + e.getMessage() + ")" + HINT, e);
+        }
+    }
+
+    private static String withoutPosixClasses(ColumnDef col, String regex, String re) {
+        Matcher m = POSIX_CLASS.matcher(re);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String range = POSIX_CLASSES.get(m.group(1));
+            if (range == null) {
+                throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "cannot generate a value of column " + col.qualifiedName()
+                        + " matching the regex '" + regex + "': Rowsmith does not generate the class [:" + m.group(1)
+                        + ":] (it generates " + String.join(", ", new TreeSet<>(POSIX_CLASSES.keySet())) + ")" + HINT);
+            }
+            m.appendReplacement(out, Matcher.quoteReplacement(range));
+        }
+        return m.appendTail(out).toString();
     }
 }
