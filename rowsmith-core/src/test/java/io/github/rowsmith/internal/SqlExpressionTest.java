@@ -2,13 +2,32 @@ package io.github.rowsmith.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.rowsmith.Pg;
+import io.github.rowsmith.internal.sql.ColumnRules;
+import io.github.rowsmith.internal.sql.Constants;
+import io.github.rowsmith.internal.sql.Op;
 import io.github.rowsmith.internal.sql.SqlExpr;
 import io.github.rowsmith.internal.sql.SqlParser;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Map;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SqlExpressionTest {
+
+    private static final DataSource DB = Pg.freshDatabase();
+
+    private static Map<String, ColumnRules> rules(String check) {
+        SqlExpr e = SqlParser.parse(check);
+        try (Connection c = DB.getConnection()) {
+            return ColumnRules.extract(e, "chk", Constants.read(c, Constants.operands(e)));
+        } catch (SQLException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -38,6 +57,21 @@ class SqlExpressionTest {
     }
 
     @Test
+    void extractsAllowedListFromAnyArray() {
+        ColumnRules r = rules("((status = ANY (ARRAY['OPEN'::text, 'CLOSED'::text])))").get("status");
+        assertThat(r.allowed).containsExactly("OPEN", "CLOSED");
+    }
+
+    @Test
+    void extractsBoundsAndLengths() {
+        Map<String, ColumnRules> m = rules("(((term_months >= 1) AND (term_months <= 60) AND (length(code) <= 3) AND (price > (0)::numeric)))");
+        assertThat(m.get("term_months").lo).isEqualTo(1);
+        assertThat(m.get("term_months").hi).isEqualTo(60);
+        assertThat(m.get("code").maxLen).isEqualTo(3);
+        assertThat(m.get("price").loInclusive).isFalse();
+    }
+
+    @Test
     void unsupportedSyntaxIsOpaqueNotFatal() {
         assertThat(SqlParser.tryParse("((data ? 'tags'::text))")).isNull();
     }
@@ -50,5 +84,25 @@ class SqlExpressionTest {
                 .isEqualTo("(app.valid_tag((\"name\"))) AND ((\"d\") <= (CURRENT_DATE))");
         assertThat(SqlExpr.sql(SqlParser.parse("((VALUE)[1] < (\"substring\"((VALUE)::text, 2, 1))::integer)")))
                 .isEqualTo("((\"value\")[1]) < ((substring(((\"value\")::text), (2), (1)))::integer)");
+    }
+
+    @Test
+    void operatorsAreParsedAndNegatedAsPostgresDefinesThem() {
+        assertThat(ColumnRules.conjuncts(SqlParser.parse("(NOT ((code)::text ~~ 'A%'::text))")))
+                .singleElement().isInstanceOfSatisfying(SqlExpr.Bin.class, b -> assertThat(b.op()).isEqualTo(Op.NOT_LIKE));
+        assertThat(SqlParser.parse("(a != b)")).isEqualTo(SqlParser.parse("(a <> b)"));
+        assertThat(SqlExpr.sql(SqlParser.parse("((x + 1) * 2 >= y)"))).isEqualTo("(((\"x\") + (1)) * (2)) >= (\"y\")");
+    }
+
+    @Test
+    void combiningRulesLeavesBothUnchanged() {
+        ColumnRules atLeast = rules("((x >= 1))").get("x");
+        ColumnRules below = rules("((x < 5))").get("x");
+        ColumnRules both = atLeast.and(below);
+        assertThat(both.lo).isEqualTo(1);
+        assertThat(both.hi).isEqualTo(5);
+        assertThat(both.hiInclusive).isFalse();
+        assertThat(atLeast.hi).isNull();
+        assertThat(below.lo).isNull();
     }
 }
