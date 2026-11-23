@@ -10,6 +10,8 @@ import io.github.rowsmith.internal.sql.SqlExpr;
 import io.github.rowsmith.internal.sql.SqlParser;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -84,6 +86,25 @@ class SqlExpressionTest {
                 .isEqualTo("(app.valid_tag((\"name\"))) AND ((\"d\") <= (CURRENT_DATE))");
         assertThat(SqlExpr.sql(SqlParser.parse("((VALUE)[1] < (\"substring\"((VALUE)::text, 2, 1))::integer)")))
                 .isEqualTo("((\"value\")[1]) < ((substring(((\"value\")::text), (2), (1)))::integer)");
+    }
+
+    @Test
+    void extractsGenerationHints() {
+        assertThat(rules("(((token_type = 1) OR (token_type = 2)))").get("token_type").allowed)
+                .containsExactly(1, 2);
+        assertThat(rules("(((x IS NULL) OR (char_length(x) <= 5)))").get("x").maxLen).isEqualTo(5);
+        assertThat(rules("(((x IS NULL) OR (y > 5)))")).doesNotContainKey("y");
+        assertThat(rules("((name = lower(btrim(name))))").get("name").letterCase).isEqualTo(ColumnRules.LetterCase.LOWER);
+        assertThat(rules("((jsonb_typeof(args) = 'array'::text))").get("args").jsonKind).isEqualTo(ColumnRules.JsonKind.ARRAY);
+        assertThat(rules("((jsonb_typeof(args) = 'list'::text))")).doesNotContainKey("args");
+        assertThat(rules("((m = date_trunc('month'::text, (m)::timestamp with time zone)))").get("m").truncUnit).isEqualTo(ColumnRules.TruncUnit.MONTH);
+        assertThat(rules("((m = date_trunc('decade'::text, m)))")).doesNotContainKey("m");
+        assertThat(rules("((octet_length(h) = 32))").get("h").minLen).isEqualTo(32);
+        assertThat(rules("((cardinality(a) = 31))").get("a").maxLen).isEqualTo(31);
+        assertThat(rules("(NOT (d < '2020-01-01'::date))").get("d").lo).isEqualTo(LocalDate.of(2020, 1, 1));
+        assertThat(rules("((\"substring\"((VALUE)::text, 2, 1) = '1'::text))").get("value").likes).containsExactly("_1%");
+        assertThat(rules("(CASE op WHEN 'INS'::text THEN true WHEN 'DEL'::text THEN true ELSE false END)").get("op").allowed)
+                .containsExactly("INS", "DEL");
     }
 
     @Test

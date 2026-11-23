@@ -193,6 +193,21 @@ public final class ColumnRules {
         return list;
     }
 
+    private static List<SqlExpr> disjuncts(SqlExpr e) {
+        List<SqlExpr> list = new ArrayList<>();
+        if (e instanceof Unary u && u.op() == UnaryOp.NOT) {
+            SqlExpr n = negate(u.expr());
+            if (n != null) e = n;
+        }
+        if (e instanceof Bin b && b.op() == Op.OR) {
+            list.addAll(disjuncts(b.left()));
+            list.addAll(disjuncts(b.right()));
+        } else {
+            list.add(e);
+        }
+        return list;
+    }
+
     private static SqlExpr negate(SqlExpr e) {
         return switch (e) {
             case Unary u when u.op() == UnaryOp.NOT -> u.expr();
@@ -224,6 +239,7 @@ public final class ColumnRules {
                 if (col == null) return;
                 add(out, col, b.negated() ? excluded(List.of(b.value())) : allowed(List.of(b.value()), source));
             }
+            case Bin b when b.op() == Op.OR -> extractOr(b, source, out, k);
             case Bin b when b.op().isComparison() -> {
                 String col = SqlExpr.columnName(b.left());
                 SqlExpr other = b.right();
@@ -238,6 +254,8 @@ public final class ColumnRules {
                     if (v.isPresent()) add(out, col, bound(op, v.get(), source));
                     return;
                 }
+                if (b.op() == Op.EQ && shapeHint(b.left(), b.right(), out, k)) return;
+                if (b.op() == Op.EQ && shapeHint(b.right(), b.left(), out, k)) return;
                 String lenCol = lengthColumn(b.left(), k);
                 SqlExpr lenOther = b.right();
                 Op lop = b.op();
@@ -296,8 +314,105 @@ public final class ColumnRules {
                 if (!(p instanceof String s)) return;
                 add(out, col, b.op() == Op.LIKE || b.op() == Op.ILIKE ? like(s) : rule(d -> d.regexes.add(s)));
             }
+            case Case c -> {
+                String col = c.operand() == null ? null : SqlExpr.columnName(c.operand());
+                if (col == null || !(c.otherwise() instanceof Lit l) || !Boolean.FALSE.equals(l.value())) return;
+                List<Object> vals = new ArrayList<>();
+                for (SqlExpr w : c.whens()) {
+                    Optional<Object> v = k.value(w);
+                    if (v.isEmpty()) return;
+                    vals.add(v.get());
+                }
+                add(out, col, allowed(vals, source));
+            }
             default -> {}
         }
+    }
+
+    private static void extractOr(Bin or, String source, Map<String, ColumnRules> out, Constants k) {
+        List<SqlExpr> rest = new ArrayList<>();
+        Set<String> nullable = new LinkedHashSet<>();
+        for (SqlExpr d : disjuncts(or)) {
+            if (d instanceof IsNull n && !n.negated() && SqlExpr.columnName(n.expr()) != null) {
+                nullable.add(SqlExpr.columnName(n.expr()));
+                continue;
+            }
+            rest.add(d);
+        }
+        if (rest.size() == 1) {
+            Map<String, ColumnRules> facts = extract(rest.get(0), source, k);
+            boolean nullGuarded = !nullable.isEmpty() && nullable.containsAll(facts.keySet());
+            if (nullGuarded) facts.forEach((col, r) -> add(out, col, r));
+            return;
+        }
+        String col = null;
+        List<Object> vals = new ArrayList<>();
+        for (SqlExpr d : rest) {
+            if (!(d instanceof Bin || d instanceof InList || d instanceof AnyAll)) return;
+            Map<String, ColumnRules> one = new HashMap<>();
+            extractOne(d, source, one, k);
+            if (one.size() != 1) return;
+            Map.Entry<String, ColumnRules> e = one.entrySet().iterator().next();
+            if (col != null && !col.equals(e.getKey())) return;
+            col = e.getKey();
+            ColumnRules r = e.getValue();
+            if (r.allowed == null || r.lo != null || r.hi != null || !r.excluded.isEmpty()) return;
+            vals.addAll(r.allowed);
+        }
+        if (col != null) add(out, col, allowed(vals, source));
+    }
+
+    private static boolean shapeHint(SqlExpr side, SqlExpr other, Map<String, ColumnRules> out, Constants k) {
+        String col = SqlExpr.columnName(side);
+        SqlExpr o = SqlExpr.unwrap(other);
+        if (col != null && o instanceof Func f && f.args().size() == 1 && (f.name().equals("lower") || f.name().equals("upper"))
+                && col.equals(SqlExpr.columnName(stripTrim(f.args().get(0))))) {
+            LetterCase letterCase = f.name().equals("lower") ? LetterCase.LOWER : LetterCase.UPPER;
+            add(out, col, rule(d -> d.letterCase = letterCase));
+            return true;
+        }
+        if (col != null && o instanceof Func f && f.name().equals("date_trunc") && f.args().size() == 2
+                && k.value(f.args().get(0)).orElse(null) instanceof String u && col.equals(SqlExpr.columnName(f.args().get(1)))
+                && TruncUnit.of(u).isPresent()) {
+            TruncUnit unit = TruncUnit.of(u).get();
+            add(out, col, rule(d -> d.truncUnit = unit));
+            return true;
+        }
+        SqlExpr s = SqlExpr.unwrap(side);
+        if (s instanceof Func f && f.args().size() == 1 && (f.name().equals("jsonb_typeof") || f.name().equals("json_typeof"))) {
+            String c = SqlExpr.columnName(f.args().get(0));
+            if (c != null && k.value(other).orElse(null) instanceof String kind && JsonKind.of(kind).isPresent()) {
+                JsonKind jsonKind = JsonKind.of(kind).get();
+                add(out, c, rule(d -> d.jsonKind = jsonKind));
+                return true;
+            }
+        }
+        if (s instanceof Func f && (f.name().equals("substring") || f.name().equals("substr") || f.name().equals("left"))
+                && f.args().size() >= 2 && k.value(other).isPresent()
+                && f.args().subList(1, f.args().size()).stream().allMatch(a -> k.value(a).isPresent())) {
+            String c = SqlExpr.columnName(f.args().get(0));
+            Object lit = k.value(other).get();
+            BigDecimal a1 = number(f.args().get(1), k);
+            BigDecimal a2 = f.args().size() > 2 ? number(f.args().get(2), k) : null;
+            int from = f.name().equals("left") ? 1 : a1 == null ? 0 : a1.intValue();
+            int len = f.name().equals("left") ? (a1 == null ? -1 : a1.intValue()) : a2 == null ? -1 : a2.intValue();
+            if (c != null && lit instanceof String l && from >= 1 && (len < 0 || len == l.length())) {
+                boolean fixesWholeTail = len < 0 && !f.name().equals("left");
+                String rest = fixesWholeTail ? "" : "%";
+                add(out, c, like("_".repeat(from - 1) + l.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + rest));
+                return true;
+            }
+        }
+        if (s instanceof Func f && f.name().equals("date_part") && f.args().size() == 2) {
+            String c = SqlExpr.columnName(f.args().get(1));
+            Object field = k.value(f.args().get(0)).orElse(null);
+            BigDecimal v = number(other, k);
+            if (c != null && "day".equals(field) && v != null && v.compareTo(BigDecimal.ONE) == 0) {
+                add(out, c, rule(d -> d.truncUnit = TruncUnit.MONTH));
+                return true;
+            }
+        }
+        return false;
     }
 
     private static SqlExpr stripTrim(SqlExpr e) {
