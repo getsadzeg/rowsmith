@@ -10,11 +10,13 @@ import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.PgType;
 import io.github.rowsmith.internal.schema.Typmod;
 import io.github.rowsmith.internal.sql.ColumnRules;
+import io.github.rowsmith.internal.sql.ColumnRules.JsonKind;
 import io.github.rowsmith.internal.sql.ColumnRules.TruncUnit;
 import io.github.rowsmith.internal.sql.SqlValues;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.nio.ByteBuffer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -22,6 +24,7 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +50,7 @@ public final class ValueGenerator {
 
     private static final int MAX_UNBOUNDED_REPEAT = 3;
     private static final int DEFAULT_SCALE = 2;
+    private static final int DEFAULT_BYTES = 8;
     private static final Character ANY_CHAR = null;
     private static final String HINT = "; set it in the test or with RowsmithSetup.value(...)";
     private static final Pattern POSIX_CLASS = Pattern.compile("\\[:([^:\\]]*):\\]");
@@ -92,6 +96,16 @@ public final class ValueGenerator {
             case DATE, TIMESTAMP, TIMESTAMPTZ -> temporal(col, kind, rules, n, req);
             case TIME, TIMETZ -> time(col, n, req);
             case INTERVAL -> n + " days";
+            case JSON -> json(rules.jsonKind, n);
+            case BYTEA -> bytes(n, length(rules, DEFAULT_BYTES));
+            case INET -> "10." + ((n >> 16) & 0xff) + "." + ((n >> 8) & 0xff) + "." + (n & 0xff);
+            case CIDR -> "10." + ((n >> 8) & 0xff) + "." + (n & 0xff) + ".0/24";
+            case MACADDR -> "02:00:00:" + HexFormat.ofDelimiter(":").formatHex(bytes(n, 3));
+            case TSVECTOR -> col.name + "-" + n;
+            case XML -> "<value>" + n + "</value>";
+            case VECTOR -> vector(typmod, n);
+            case BIT -> bits(base, typmod, n);
+            case ARRAY -> array(col, base, rules, n, req, top);
             case ENUM, BOOL -> throw new IllegalStateException("handled as allowed values");
             default -> throw new RowsmithException(ErrorCode.UNSUPPORTED_TYPE, "cannot generate a value of type " + type.castName
                     + " for column " + col.qualifiedName() + HINT + ", or give the column a DEFAULT");
@@ -518,5 +532,52 @@ public final class ValueGenerator {
             m.appendReplacement(out, Matcher.quoteReplacement(range));
         }
         return m.appendTail(out).toString();
+    }
+
+    private static String json(JsonKind kind, long n) {
+        return switch (kind == null ? JsonKind.OBJECT : kind) {
+            case OBJECT -> "{\"n\": " + n + "}";
+            case ARRAY -> "[" + n + "]";
+            case STRING -> "\"" + n + "\"";
+            case NUMBER -> String.valueOf(n);
+            case BOOLEAN -> "true";
+            case NULL -> "null";
+        };
+    }
+
+    private static byte[] bytes(long n, int length) {
+        byte[] full = ByteBuffer.allocate(Long.BYTES).putLong(n).array();
+        byte[] out = new byte[length];
+        int copy = Math.min(length, Long.BYTES);
+        System.arraycopy(full, Long.BYTES - copy, out, length - copy, copy);
+        return out;
+    }
+
+    private static int length(ColumnRules rules, int preferred) {
+        int lo = rules.minLen == null ? 0 : Math.max(0, rules.minLen);
+        int hi = rules.maxLen == null ? Math.max(lo, preferred) : rules.maxLen;
+        return Math.max(lo, Math.min(hi, preferred));
+    }
+
+    private static String vector(int dims, long n) {
+        StringBuilder sb = new StringBuilder("[").append(n);
+        for (int i = 1; i < Math.max(1, dims); i++) sb.append(",0");
+        return sb.append(']').toString();
+    }
+
+    private static String bits(PgType base, int typmod, long n) {
+        String b = Long.toBinaryString(n);
+        if (!base.name.equals("bit")) return b;
+        int width = Math.max(1, typmod);
+        return b.length() >= width ? b.substring(b.length() - width) : "0".repeat(width - b.length()) + b;
+    }
+
+    private List<Object> array(ColumnDef col, PgType base, ColumnRules rules, long n, Request req, boolean top) {
+        int size = top ? length(rules, 1) : 1;
+        List<Object> out = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            out.add(value(col, base.element(), -1, new ColumnRules(), (n - 1) * size + 1 + i, req, false));
+        }
+        return out;
     }
 }
