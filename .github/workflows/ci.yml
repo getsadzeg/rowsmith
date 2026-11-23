@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (PostgreSQL ${{ matrix.pg }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["14", "15", "16", "17", "18"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and test (Testcontainers, postgres:${{ matrix.pg }}-alpine)
+        run: ./gradlew build -Ppg=${{ matrix.pg }} --continue
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports-pg${{ matrix.pg }}
+          path: "**/build/reports/tests/"

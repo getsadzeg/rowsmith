@@ -1,5 +1,8 @@
+import net.ltgt.gradle.errorprone.errorprone
+
 plugins {
     `java-library`
+    alias(libs.plugins.errorprone) apply false
 }
 
 allprojects {
@@ -19,6 +22,29 @@ subprojects {
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
         options.compilerArgs.addAll(listOf("-Xlint:all,-serial,-processing", "-parameters"))
+    }
+
+    if (path.startsWith(":rowsmith-")) {
+        apply(plugin = "net.ltgt.errorprone")
+        apply(plugin = "pmd")
+        dependencies.add("errorprone", rootProject.libs.errorprone.core)
+        tasks.withType<JavaCompile>().configureEach {
+            options.errorprone {
+                allErrorsAsWarnings = true
+                disableWarningsInGeneratedCode = true
+                excludedPaths = ".*/build/generated/.*|.*/src/test/java/.*/Db\\.java"
+            }
+        }
+        extensions.configure<PmdExtension> {
+            toolVersion = rootProject.libs.versions.pmd.get()
+            ruleSets = listOf()
+            ruleSetFiles = files(rootProject.file("config/pmd/ruleset.xml"))
+            isIgnoreFailures = true
+            isConsoleOutput = true
+        }
+        tasks.withType<Pmd>().configureEach {
+            exclude("**/Db.java")
+        }
     }
 
     tasks.withType<Javadoc>().configureEach {
