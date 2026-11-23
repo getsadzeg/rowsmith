@@ -30,6 +30,7 @@ public final class ValueGenerator {
 
     public record Request(ColumnRules rules, long number, Uniqueness uniqueness) {}
     private static final int DEFAULT_SCALE = 2;
+    private static final Character ANY_CHAR = null;
     private static final String HINT = "; set it in the test or with RowsmithSetup.value(...)";
     private final RowsmithClock clock;
     public ValueGenerator(RowsmithClock clock) {
@@ -51,6 +52,7 @@ public final class ValueGenerator {
 
         return switch (kind) {
             case INT2, INT4, INT8, NUMERIC, FLOAT, MONEY -> number(col, kind, typmod, rules, n, req);
+            case TEXT, CHAR -> text(col, kind, typmod, rules, n, top ? req.uniqueness() : Uniqueness.NONE);
             case UUID -> new UUID(0, n);
             case ENUM, BOOL -> throw new IllegalStateException("handled as allowed values");
             default -> throw new RowsmithException(ErrorCode.UNSUPPORTED_TYPE, "cannot generate a value of type " + type.castName
@@ -213,5 +215,136 @@ public final class ValueGenerator {
 
     private static BigDecimal min(BigDecimal a, BigDecimal b) {
         return a == null ? b : b == null ? a : a.min(b);
+    }
+
+    private Object text(ColumnDef col, TypeKind kind, int typmod, ColumnRules rules, long n, Uniqueness u) {
+        int maxLen = Typmod.isSet(typmod) ? Typmod.length(typmod) : Integer.MAX_VALUE;
+        if (rules.maxLen != null) maxLen = Math.min(maxLen, rules.maxLen);
+        int minLen = rules.minLen == null ? 1 : Math.max(1, rules.minLen);
+        if (minLen > maxLen) {
+            throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "no text of length " + minLen + " or more fits column " + col.qualifiedName()
+                    + " (at most " + maxLen + " characters)" + HINT);
+        }
+        String s;
+        if (!rules.likes.isEmpty()) {
+            String pattern = rules.likes.size() > 1 ? mergeLikes(rules.likes) : rules.likes.get(0);
+            if (pattern == null) {
+                throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "column " + col.qualifiedName() + " must match LIKE patterns "
+                        + rules.likes + ", which Rowsmith cannot combine" + HINT);
+            }
+            s = fromLike(pattern, n, minLen, maxLen);
+            if (s == null) {
+                throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "no value of column " + col.qualifiedName() + " matches LIKE '" + pattern
+                        + "' within " + minLen + " to " + maxLen + " characters" + HINT);
+            }
+        } else {
+            boolean fixedWidth = kind == TypeKind.CHAR && maxLen < Integer.MAX_VALUE;
+            int width = fixedWidth ? maxLen : minLen;
+            s = numbered(col.name + "-", n, width, maxLen);
+            if (s == null) s = numbered("", n, width, maxLen);
+            if (s == null && u != Uniqueness.ALONE) s = numbered("", lastDigits(n, maxLen), width, maxLen);
+            if (s == null) {
+                throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "row number " + n + " does not fit column " + col.qualifiedName()
+                        + " (at most " + maxLen + " characters)" + HINT);
+            }
+        }
+        if (rules.letterCase == ColumnRules.LetterCase.LOWER) s = s.toLowerCase(Locale.ROOT);
+        else if (rules.letterCase == ColumnRules.LetterCase.UPPER) s = s.toUpperCase(Locale.ROOT);
+        return s;
+    }
+
+    private static long lastDigits(long n, int count) {
+        return BigInteger.valueOf(n).mod(BigInteger.TEN.pow(count)).longValue();
+    }
+
+    private static String numbered(String prefix, long n, int minLen, int maxLen) {
+        String digits = Long.toString(n);
+        int pad = minLen - prefix.length() - digits.length();
+        String s = prefix + "0".repeat(Math.max(0, pad)) + digits;
+        return s.length() <= maxLen ? s : null;
+    }
+
+    private static String fromLike(String pattern, long n, int minLen, int maxLen) {
+        boolean hasPercent = false;
+        int fixed = 0;
+        int underscores = 0;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '%') {
+                hasPercent = true;
+                continue;
+            }
+            fixed++;
+            if (c == '\\') i++;
+            else if (c == '_') underscores++;
+        }
+        String number = "";
+        if (hasPercent) {
+            number = String.format("%0" + Math.max(1, minLen - fixed) + "d", n);
+            if (fixed + number.length() > maxLen) number = "";
+        }
+        String digits = hasPercent ? "" : String.format("%0" + Math.max(1, underscores) + "d", n);
+        int nextDigit = Math.max(0, digits.length() - underscores);
+        StringBuilder sb = new StringBuilder();
+        boolean numberWritten = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\\' && i + 1 < pattern.length()) {
+                sb.append(pattern.charAt(++i));
+            } else if (c == '%') {
+                if (!numberWritten) sb.append(number);
+                numberWritten = true;
+            } else if (c == '_') {
+                sb.append(hasPercent ? 'x' : digits.charAt(nextDigit++));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.length() >= minLen && sb.length() <= maxLen ? sb.toString() : null;
+    }
+
+    private static String mergeLikes(List<String> likes) {
+        List<Character> merged = new ArrayList<>();
+        boolean open = true;
+        Integer exact = null;
+        for (String p : likes) {
+            List<Character> chars = new ArrayList<>();
+            boolean trailing = false;
+            for (int i = 0; i < p.length(); i++) {
+                char c = p.charAt(i);
+                if (c == '%') {
+                    if (i != p.length() - 1) return null;
+                    trailing = true;
+                } else if (c == '\\' && i + 1 < p.length()) {
+                    chars.add(p.charAt(++i));
+                } else if (c == '_') {
+                    chars.add(ANY_CHAR);
+                } else {
+                    chars.add(c);
+                }
+            }
+            if (!trailing) {
+                if (exact != null && exact != chars.size()) return null;
+                exact = chars.size();
+                open = false;
+            }
+            for (int i = 0; i < chars.size(); i++) {
+                if (i == merged.size()) merged.add(chars.get(i));
+                else if (isAnyChar(merged.get(i))) merged.set(i, chars.get(i));
+                else if (!isAnyChar(chars.get(i)) && !merged.get(i).equals(chars.get(i))) return null;
+            }
+        }
+        if (exact != null && merged.size() > exact) return null;
+        StringBuilder sb = new StringBuilder();
+        for (Character c : merged) {
+            if (isAnyChar(c)) sb.append('_');
+            else if (c == '%' || c == '_' || c == '\\') sb.append('\\').append(c);
+            else sb.append(c);
+        }
+        return open ? sb.append('%').toString() : sb.toString();
+    }
+
+    private static boolean isAnyChar(Character c) {
+        return c == null;
     }
 }
