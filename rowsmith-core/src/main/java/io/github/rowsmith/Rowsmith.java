@@ -44,6 +44,7 @@ public final class Rowsmith {
     public static final class Builder {
         private final DataSource dataSource;
         private Clock clock = Clock.systemDefaultZone();
+        private RowsmithSetup.Config setup = new RowsmithSetup.Config();
 
         private Builder(DataSource dataSource) {
             if (dataSource == null) throw new RowsmithException(ErrorCode.NO_DATASOURCE, "DataSource must not be null");
@@ -53,8 +54,16 @@ public final class Rowsmith {
         /** The clock for "today"/"now" (default: the system clock); use the application's clock, or a fixed one in tests. */
         public Builder clock(Clock clock) { this.clock = clock; return this; }
 
+        /** Applies a {@link RowsmithSetup}: its value patterns. */
+        public Builder setup(RowsmithSetup setup) {
+            RowsmithSetup.Config c = new RowsmithSetup.Config();
+            setup.configure(c);
+            this.setup = c;
+            return this;
+        }
+
         public Rowsmith build() {
-            return new Rowsmith(new Engine(dataSource, new RowsmithClock(clock), List.of(), new InternalAccess()));
+            return new Rowsmith(new Engine(dataSource, new RowsmithClock(clock), setup.values(), new InternalAccess()));
         }
     }
 
