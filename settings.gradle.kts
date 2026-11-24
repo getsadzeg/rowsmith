@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     }
 }
 
-include("rowsmith-core")
+include("rowsmith-core", "rowsmith-codegen")

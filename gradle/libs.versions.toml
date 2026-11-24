@@ -7,6 +7,8 @@ jqwik = "1.10.2"
 testcontainers = "2.0.5"
 spring6 = "6.2.19"
 slf4j = "2.0.17"
+flyway = "12.11.0"
+javapoet = "0.12.0"
 errorprone = "2.53.0"
 errorprone-plugin = "5.2.0"
 pmd = "7.29.0"
@@ -22,6 +24,9 @@ jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 spring-jdbc = { module = "org.springframework:spring-jdbc", version.ref = "spring6" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+javapoet = { module = "com.palantir.javapoet:javapoet", version.ref = "javapoet" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 
 [plugins]
