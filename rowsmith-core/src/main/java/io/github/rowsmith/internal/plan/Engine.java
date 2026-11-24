@@ -47,6 +47,9 @@ public final class Engine {
     private Schema schema;
     final GenState state = new GenState();
     final ApiAccess api;
+    final List<Created> created = new ArrayList<>();
+
+    record Created(Row row, TableDef table, boolean externalTx) {}
 
     public record Planned(List<Plan.PlannedRow> rows, List<String> sql) {}
 
@@ -161,6 +164,7 @@ public final class Engine {
                 throw e;
             }
             state.adopt(attempt);
+            for (Node n : order) created.add(new Created(n.row, n.table, external));
             List<Row> roots = new ArrayList<>();
             for (Node n : planner.nodes) if (n.origin == Node.Origin.REQUESTED) roots.add(n.row);
             return roots;
@@ -213,6 +217,18 @@ public final class Engine {
         } finally {
             if (conn != null) connections.release(conn);
         }
+    }
+
+    public List<Row> createdRows() {
+        List<Row> out = new ArrayList<>();
+        for (Created c : created) out.add(c.row());
+        return out;
+    }
+
+    public void cleanup() {
+        if (created.isEmpty()) return;
+        new Cleanup(this).run();
+        created.clear();
     }
 
     public String describe(String table) {

@@ -170,6 +170,23 @@ public final class Rowsmith {
         return find(table.qualifiedName(), id);
     }
 
+    /** Rows created by this instance, in insert order. */
+    public List<Row> created() {
+        return engine.createdRows();
+    }
+
+    /**
+     * Deletes exactly the rows this instance created that still exist, children first, in one transaction.
+     * Validates first: if rows Rowsmith did not create still reference them, nothing is deleted and
+     * {@link ErrorCode#CLEANUP_BLOCKED} is thrown. Rows created inside a caller's active transaction (such as a Spring
+     * test transaction) are left to that transaction; under Spring propagation without an actual transaction (such as
+     * NOT_SUPPORTED or SUPPORTS) rows are committed and deleted here like any other. Throws {@link ErrorCode#CLEANUP_BLOCKED} when called while such a
+     * transaction is open on this thread and there are rows to delete.
+     */
+    public void cleanup() {
+        engine.cleanup();
+    }
+
     public String describe(Table table) {
         return describe(table.qualifiedName());
     }
