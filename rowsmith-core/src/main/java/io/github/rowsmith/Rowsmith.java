@@ -160,4 +160,18 @@ public final class Rowsmith {
     public Row find(Table table, Object id) {
         return find(table.qualifiedName(), id);
     }
+
+    public String describe(Table table) {
+        return describe(table.qualifiedName());
+    }
+
+    /** A compact description of a table as Rowsmith sees it: columns, keys and checks. */
+    public String describe(String table) {
+        return engine.describe(table);
+    }
+
+    /** Names of all tables Rowsmith can create, as you would pass them to create(...). */
+    public List<String> tables() {
+        return engine.tables();
+    }
 }

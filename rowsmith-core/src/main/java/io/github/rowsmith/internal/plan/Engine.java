@@ -10,6 +10,7 @@ import io.github.rowsmith.internal.config.RowsmithClock;
 import io.github.rowsmith.internal.gen.Literals;
 import io.github.rowsmith.internal.gen.ValueGenerator;
 import io.github.rowsmith.internal.schema.CatalogReader;
+import io.github.rowsmith.internal.schema.CheckConstraint;
 import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.Schema;
@@ -212,5 +213,36 @@ public final class Engine {
         } finally {
             if (conn != null) connections.release(conn);
         }
+    }
+
+    public String describe(String table) {
+        var t = schema().table(table);
+        StringBuilder sb = new StringBuilder("table ").append(t.displayName()).append('\n');
+        for (var c : t.columns()) {
+            sb.append("  ").append(c.name).append(' ').append(c.formattedType);
+            if (c.required()) sb.append(" NOT NULL");
+            if (c.isIdentity()) sb.append(" IDENTITY");
+            else if (c.isGenerated()) sb.append(" GENERATED");
+            else if (c.defaultExpr != null) sb.append(" DEFAULT ").append(c.defaultExpr);
+            if (c.type.isEnum()) sb.append(" enum").append(c.type.enumLabels);
+            sb.append('\n');
+        }
+        for (ForeignKey fk : t.foreignKeys) {
+            sb.append("  fk ").append(fk.name).append(": (").append(fk.columnList()).append(") -> ").append(fk.refTable().displayName())
+                    .append(fk.required() ? " required" : " optional").append(fk.deferrable ? " deferrable" : "").append('\n');
+        }
+        for (UniqueKey uk : t.uniqueKeys) sb.append("  ").append(uk.primary ? "pk " : "unique ").append(uk.describe()).append('\n');
+        for (CheckConstraint ch : t.checks) sb.append("  check ").append(ch.name).append(": ").append(ch.body).append('\n');
+        List<String> children = new ArrayList<>();
+        for (ForeignKey fk : t.incomingForeignKeys(schema())) children.add(fk.table.displayName() + "." + fk.columnList());
+        if (!children.isEmpty()) sb.append("  referenced by: ").append(String.join(", ", children)).append('\n');
+        return sb.toString();
+    }
+
+    public List<String> tables() {
+        List<String> out = new ArrayList<>();
+        for (var t : schema().tables()) out.add(t.displayName());
+        Collections.sort(out);
+        return out;
     }
 }
