@@ -3,13 +3,16 @@ package io.github.rowsmith.internal.plan;
 import io.github.rowsmith.ErrorCode;
 import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.ValueSource;
+import io.github.rowsmith.internal.schema.CheckConstraint;
 import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.UniqueKey;
+import io.github.rowsmith.internal.sql.ColumnRules;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 final class PlanErrors {
 
@@ -82,6 +85,63 @@ final class PlanErrors {
             }
         }
         return s.isEmpty() ? "" : "Values came from: " + String.join(", ", new LinkedHashSet<>(s)) + ".";
+    }
+
+    RowsmithException cannotSatisfy(Node n, CheckVerifier.Failure f) {
+        List<String> generated = CheckVerifier.chosenByRowsmith(n, f.columns()).stream().map(c -> c.name).toList();
+        if (generated.isEmpty()) return checkViolation(n, f);
+        return new RowsmithException(ErrorCode.CANNOT_GENERATE, "the generated values of " + n.label + " do not satisfy " + what(f) + ": "
+                + f.check().body + "; " + setHint(generated));
+    }
+
+    private RowsmithException checkViolation(Node n, CheckVerifier.Failure f) {
+        CheckConstraint ch = f.check();
+        List<String> cols = new ArrayList<>(f.columns());
+        List<String> vals = new ArrayList<>();
+        Set<String> sources = new LinkedHashSet<>();
+        for (String name : cols) {
+            ColumnDef c = n.table.column(name);
+            if (c == null) continue;
+            vals.add(name + " = " + show(values.valueOf(n, name)));
+            if (n.sources.get(c) == ValueSource.SETUP) sources.add(name + " from " + setupValue(c));
+        }
+        StringBuilder sb = new StringBuilder();
+        if (vals.size() == 1) sb.append(n.table.displayName()).append('.').append(vals.get(0));
+        else sb.append(n.table.displayName()).append(" values (").append(String.join(", ", vals)).append(")");
+        sb.append(vals.size() == 1 ? " violates " : " violate ").append(what(f));
+        String allowed = cols.size() == 1 ? allowedText(n, n.table.column(cols.get(0))) : null;
+        if (allowed != null) sb.append("; ").append(allowed);
+        else sb.append(": ").append(ch.body);
+        if (!sources.isEmpty()) sb.append(" [").append(String.join(", ", sources)).append("]");
+        return new RowsmithException(ErrorCode.CHECK_VIOLATION, sb.toString());
+    }
+
+    private static String what(CheckVerifier.Failure f) {
+        return f.domainColumn() != null ? "domain " + f.domainColumn().type.castName + " check " + f.check().name : "check " + f.check().name;
+    }
+
+    private static String allowedText(Node n, ColumnDef c) {
+        if (c == null) return null;
+        ColumnRules r = n.model.rulesFor(c);
+        if (r.isEmpty()) return null;
+        if (r.allowed != null) {
+            List<String> a = new ArrayList<>();
+            for (Object o : r.allowed) a.add(String.valueOf(o));
+            return "allowed: " + String.join(", ", a);
+        }
+        List<String> parts = new ArrayList<>();
+        if (r.lo != null) parts.add((r.loInclusive ? ">= " : "> ") + show(r.lo));
+        if (r.hi != null) parts.add((r.hiInclusive ? "<= " : "< ") + show(r.hi));
+        if (r.minLen != null) parts.add("length >= " + r.minLen);
+        if (r.maxLen != null) parts.add("length <= " + r.maxLen);
+        if (!r.excluded.isEmpty()) parts.add("not " + r.excluded);
+        if (!r.likes.isEmpty()) parts.add("LIKE '" + r.likes.get(0) + "'");
+        if (!r.regexes.isEmpty()) parts.add("~ '" + r.regexes.get(0) + "'");
+        return parts.isEmpty() ? null : "must be " + String.join(" and ", parts);
+    }
+
+    private static String show(Cell v) {
+        return v instanceof Cell.Known k ? show(k.value()) : "?";
     }
 
     private static String show(Object v) {

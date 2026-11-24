@@ -22,6 +22,7 @@ final class Planner {
     private final PlanErrors errors;
     private final RowFiller filler;
     private final Expander expander;
+    private final CheckVerifier checks;
     List<Node> nodes = List.of();
 
     Planner(Engine engine, GenState state, PgEval db) {
@@ -31,11 +32,13 @@ final class Planner {
         this.keys = new KeyRegistry(state, values, db, errors);
         this.filler = new RowFiller(engine, db, state, keys, errors);
         this.expander = new Expander(engine, db, filler, keys);
+        this.checks = new CheckVerifier(db, values, errors, new ComparisonRepair(db, values, filler), keys);
     }
 
     List<Node> plan(List<RowSpec> roots) {
         nodes = expander.expand(roots);
         skipTakenNumbers();
+        checks.verify(nodes);
         return topo();
     }
 
