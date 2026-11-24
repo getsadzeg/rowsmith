@@ -19,12 +19,15 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -90,7 +93,38 @@ final class Executor {
     }
 
     void execute(List<Node> order, Connection conn) throws SQLException {
-        insertAll(order, conn);
+        preallocate(order, conn);
+        Set<String> deferred = new LinkedHashSet<>();
+        Set<String> initiallyImmediate = new LinkedHashSet<>();
+        for (Node n : order) {
+            for (ForeignKey fk : n.deferred) {
+                if (fk.isSelfReference() && n.refersTo(fk, n)) continue;
+                String name = Strings.quoteIdent(fk.table.schema) + "." + Strings.quoteIdent(fk.name);
+                deferred.add(name);
+                if (!fk.initiallyDeferred) initiallyImmediate.add(name);
+            }
+        }
+        setConstraints(conn, deferred, ConstraintMode.DEFERRED);
+        try {
+            insertAll(order, conn);
+        } catch (SQLException | RuntimeException e) {
+            try {
+                setConstraints(conn, initiallyImmediate, ConstraintMode.IMMEDIATE);
+            } catch (SQLException restoreFailure) {
+                e.addSuppressed(restoreFailure);
+            }
+            throw e;
+        }
+        setConstraints(conn, initiallyImmediate, ConstraintMode.IMMEDIATE);
+    }
+
+    private enum ConstraintMode { DEFERRED, IMMEDIATE }
+
+    private static void setConstraints(Connection conn, Set<String> constraints, ConstraintMode mode) throws SQLException {
+        if (constraints.isEmpty()) return;
+        try (Statement st = conn.createStatement()) {
+            st.execute("SET CONSTRAINTS " + String.join(", ", constraints) + " " + mode.name());
+        }
     }
 
     private void insertAll(List<Node> order, Connection conn) throws SQLException {
@@ -109,6 +143,26 @@ final class Executor {
                     case Ref.Planned p -> p.node().row;
                 };
                 if (parent != null) n.parentRows.put(e.getKey().columns.size() == 1 ? e.getKey().columns.get(0).name : e.getKey().name, parent);
+            }
+        }
+    }
+
+    private void preallocate(List<Node> order, Connection conn) throws SQLException {
+        for (Node n : order) {
+            for (ForeignKey fk : n.deferred) {
+                if (!(n.refs().get(fk) instanceof Ref.Planned(Node target))) continue;
+                for (ColumnDef rc : fk.refColumns()) {
+                    if (!(target.assignment(rc) instanceof Assignment.Default)) continue;
+                    String next = rc.isIdentity() ? "nextval(" + Strings.quoteLiteral(rc.sequence) + "::regclass)" : rc.defaultExpr;
+                    if (next == null || rc.isGenerated()) {
+                        throw new RowsmithException(ErrorCode.CANNOT_GENERATE, "cannot pre-compute " + rc.qualifiedName()
+                                + " to insert the deferred foreign key " + fk.name + "; set it explicitly");
+                    }
+                    try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery("SELECT (" + next + ")::" + castFor(rc.type, rc))) {
+                        rs.next();
+                        target.assign(rc, new Assignment.Preallocated(readValue(rs, 1, rc)));
+                    }
+                }
             }
         }
     }
