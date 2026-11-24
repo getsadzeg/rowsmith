@@ -2,6 +2,7 @@ package io.github.rowsmith;
 
 import io.github.rowsmith.internal.config.RowsmithClock;
 import io.github.rowsmith.internal.plan.Engine;
+import io.github.rowsmith.internal.util.CallSite;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,7 +100,19 @@ public final class Rowsmith {
         return specs;
     }
 
+    private static RowsmithException withSite(RowsmithException e, String site) {
+        if (site.isEmpty()) return e;
+        RowsmithException r = new RowsmithException(e.code(), e.detail() + " " + site, e.getCause());
+        r.setStackTrace(e.getStackTrace());
+        return r;
+    }
+
     private List<Row> run(List<RowSpec> specs) {
-        return engine.create(specs);
+        String site = CallSite.find();
+        try {
+            return engine.create(specs);
+        } catch (RowsmithException e) {
+            throw withSite(e, site);
+        }
     }
 }
