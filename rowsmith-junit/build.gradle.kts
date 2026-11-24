@@ -9,6 +9,9 @@ dependencies {
     implementation(libs.postgresql)
     compileOnly(libs.junit5.api)
     compileOnly(libs.testcontainers.jdbc)
+    compileOnly(libs.spring.test)
+    compileOnly(libs.spring.context)
+    compileOnly(libs.spring.jdbc)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -17,5 +20,8 @@ dependencies {
     testImplementation(libs.assertj)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.postgresql)
+    testImplementation(libs.spring.test)
+    testImplementation(libs.spring.context)
+    testImplementation(libs.spring.jdbc)
     testRuntimeOnly(libs.slf4j.simple)
 }

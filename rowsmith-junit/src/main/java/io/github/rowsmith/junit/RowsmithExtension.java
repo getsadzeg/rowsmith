@@ -6,6 +6,7 @@ import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.RowsmithSetup;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -98,10 +99,13 @@ public final class RowsmithExtension
         Class<? extends RowsmithSetup> setup = settings(ec).<Class<? extends RowsmithSetup>>map(RowsmithTest::setup)
                 .orElse(RowsmithSetup.None.class);
         Rowsmith.Builder b = Rowsmith.builder(dataSource(ec)).setup(ReflectionSupport.newInstance(setup));
+        clock(ec).ifPresent(b::clock);
         return b.build();
     }
 
     DataSource dataSource(ExtensionContext ec) {
+        Optional<DataSource> spring = SpringSupport.available() ? SpringSupport.dataSource(ec) : Optional.empty();
+        if (spring.isPresent()) return spring.get();
         boolean containers = ContainerSupport.available();
         for (Class<?> testClass : innermostFirst(ec)) {
             Object instance = ec.getTestInstances().flatMap(i -> i.findInstance(testClass)).orElse(null);
@@ -115,7 +119,7 @@ public final class RowsmithExtension
             }
         }
         throw new RowsmithException(ErrorCode.NO_DATASOURCE, "no DataSource for " + ec.getRequiredTestClass().getSimpleName()
-                + ". Use a DataSource field or a Testcontainers "
+                + ". Use a Spring test context with a DataSource bean, a DataSource field, or a Testcontainers "
                 + "PostgreSQLContainer field (static @Container) in the test class.");
     }
 
@@ -134,5 +138,9 @@ public final class RowsmithExtension
         } catch (IllegalAccessException e) {
             return null;
         }
+    }
+
+    private static Optional<Clock> clock(ExtensionContext ec) {
+        return SpringSupport.available() ? SpringSupport.clock(ec) : Optional.empty();
     }
 }

@@ -27,6 +27,8 @@ jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 testcontainers-jdbc = { module = "org.testcontainers:testcontainers-jdbc", version.ref = "testcontainers" }
 spring-jdbc = { module = "org.springframework:spring-jdbc", version.ref = "spring6" }
+spring-test = { module = "org.springframework:spring-test", version.ref = "spring6" }
+spring-context = { module = "org.springframework:spring-context", version.ref = "spring6" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
