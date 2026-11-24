@@ -1,6 +1,8 @@
 package io.github.rowsmith.internal.plan;
 
 import io.github.rowsmith.ErrorCode;
+import io.github.rowsmith.Row;
+import io.github.rowsmith.RowSpec;
 import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.internal.config.RowsmithClock;
 import io.github.rowsmith.internal.gen.ValueGenerator;
@@ -9,8 +11,10 @@ import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.Schema;
 import io.github.rowsmith.internal.schema.TableDef;
+import io.github.rowsmith.internal.util.Savepoints;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -95,4 +99,51 @@ public final class Engine {
 
     RowsmithClock clock() { return clock; }
     ValueGenerator generator() { return generator; }
+
+    public List<Row> create(List<RowSpec> specs) {
+        Connection conn = null;
+        boolean restoreAutoCommit = false;
+        try {
+            conn = connections.get();
+            GenState attempt = state.copy();
+            Planner planner = new Planner(this, attempt, new PgEval(conn, clock().zone()));
+            List<Node> order = planner.plan(specs);
+            Executor ex = new Executor(planner.keys, schema(), api);
+            boolean external = connections.isExternalTransaction(conn);
+            if (!external && conn.getAutoCommit()) {
+                conn.setAutoCommit(false);
+                restoreAutoCommit = true;
+            }
+            try {
+                if (external) {
+                    inSavepoint(ex, order, conn);
+                } else {
+                    ex.execute(order, conn);
+                    conn.commit();
+                }
+            } catch (SQLException | RuntimeException e) {
+                if (!external) Connections.rollbackQuietly(conn);
+                for (Node n : order) n.row = null;
+                throw e;
+            }
+            state.adopt(attempt);
+            List<Row> roots = new ArrayList<>();
+            for (Node n : planner.nodes) if (n.origin == Node.Origin.REQUESTED) roots.add(n.row);
+            return roots;
+        } catch (SQLException e) {
+            throw new RowsmithException(ErrorCode.DATABASE_ERROR, "database error: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) {
+                if (restoreAutoCommit) Connections.enableAutoCommitQuietly(conn);
+                connections.release(conn);
+            }
+        }
+    }
+
+    private static void inSavepoint(Executor ex, List<Node> order, Connection conn) throws SQLException {
+        Savepoints.isolated(conn, () -> {
+            ex.execute(order, conn);
+            return null;
+        });
+    }
 }

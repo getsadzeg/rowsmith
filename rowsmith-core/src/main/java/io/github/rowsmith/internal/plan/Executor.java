@@ -1,19 +1,64 @@
 package io.github.rowsmith.internal.plan;
 
 import io.github.rowsmith.ErrorCode;
+import io.github.rowsmith.Row;
+import io.github.rowsmith.internal.gen.Literals;
 import io.github.rowsmith.internal.gen.TypeKind;
 import io.github.rowsmith.internal.schema.ColumnDef;
+import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.PgType;
+import io.github.rowsmith.internal.schema.Schema;
+import io.github.rowsmith.internal.schema.UniqueKey;
+import io.github.rowsmith.internal.util.Strings;
 import java.sql.Array;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.IntFunction;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.postgresql.util.PSQLState;
 
 final class Executor {
+
+    private final KeyRegistry keys;
+    private final Schema schema;
+    private final ApiAccess api;
+
+    Executor(KeyRegistry keys, Schema schema, ApiAccess api) {
+        this.keys = keys;
+        this.schema = schema;
+        this.api = api;
+    }
+
+    record Insert(Node node, List<ColumnDef> columns, List<Cell> values, boolean overriding) {
+        String sql() {
+            return statement(i -> "?::" + castFor(columns.get(i).type, columns.get(i))) + " RETURNING *";
+        }
+
+        String literalSql() {
+            return statement(i -> switch (values.get(i)) {
+                case Cell.Known k -> Literals.sql(k.value(), castFor(columns.get(i).type, columns.get(i)));
+                case Cell other -> other.toString();
+            }) + ";";
+        }
+
+        private String statement(IntFunction<String> value) {
+            StringBuilder sb = new StringBuilder("INSERT INTO ").append(node.table.sqlName());
+            if (columns.isEmpty()) return sb.append(" DEFAULT VALUES").toString();
+            sb.append(" (").append(columns.stream().map(c -> Strings.quoteIdent(c.name)).collect(Collectors.joining(", "))).append(")");
+            if (overriding) sb.append(" OVERRIDING SYSTEM VALUE");
+            return sb.append(" VALUES (").append(IntStream.range(0, columns.size()).mapToObj(value).collect(Collectors.joining(", "))).append(")").toString();
+        }
+    }
 
     static String castFor(PgType t, ColumnDef col) {
         if (t.isArray()) return castFor(t.element(), null) + "[]";
@@ -24,6 +69,72 @@ final class Executor {
             case "bit" -> col != null ? col.formattedType : "varbit";
             default -> t.castName;
         };
+    }
+
+    Insert insertFor(Node n) {
+        List<ColumnDef> cols = new ArrayList<>();
+        List<Cell> vals = new ArrayList<>();
+        boolean overriding = false;
+        for (ColumnDef c : n.table.columns()) {
+            if (n.assignment(c) instanceof Assignment.Default) continue;
+            if (c.identity == ColumnDef.Identity.ALWAYS) overriding = true;
+            cols.add(c);
+            vals.add(n.cell(c));
+        }
+        return new Insert(n, cols, vals, overriding);
+    }
+
+    void execute(List<Node> order, Connection conn) throws SQLException {
+        insertAll(order, conn);
+    }
+
+    private void insertAll(List<Node> order, Connection conn) throws SQLException {
+        for (Node n : order) {
+            Map<UniqueKey, List<Object>> planned = keys.tuples(n);
+            keys.checkKeys(n, true);
+            n.row = insert(n, conn);
+            Node relParent = n.relParent();
+            if (relParent != null) relParent.childRows.computeIfAbsent(n.table.qualifiedName(), k -> new ArrayList<>()).add(n.row);
+            keys.inserted(n, planned);
+        }
+        for (Node n : order) {
+            for (Map.Entry<ForeignKey, Ref> e : n.refs().entrySet()) {
+                Row parent = switch (e.getValue()) {
+                    case Ref.Existing x -> x.row();
+                    case Ref.Planned p -> p.node().row;
+                };
+                if (parent != null) n.parentRows.put(e.getKey().columns.size() == 1 ? e.getKey().columns.get(0).name : e.getKey().name, parent);
+            }
+        }
+    }
+
+    private Row insert(Node n, Connection conn) throws SQLException {
+        Insert ins = insertFor(n);
+        try (PreparedStatement ps = conn.prepareStatement(ins.sql())) {
+            for (int i = 0; i < ins.values().size(); i++) {
+                if (!(ins.values().get(i) instanceof Cell.Known value)) throw new IllegalStateException(n.label + " is inserted before the row it references");
+                String text = Literals.toText(value.value());
+                if (text == null) ps.setNull(i + 1, Types.OTHER);
+                else ps.setObject(i + 1, text, Types.OTHER);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return read(n, rs);
+            }
+        }
+    }
+
+    private Row read(Node n, ResultSet rs) throws SQLException {
+        Map<String, Object> values = new LinkedHashMap<>();
+        ResultSetMetaData md = rs.getMetaData();
+        for (int i = 1; i <= md.getColumnCount(); i++) {
+            String name = md.getColumnName(i);
+            ColumnDef c = n.table.column(name);
+            values.put(name, c == null ? rs.getObject(i) : readValue(rs, i, c));
+        }
+        List<String> pk = new ArrayList<>();
+        if (n.table.primaryKey() != null) for (ColumnDef c : n.table.primaryKey().columns) pk.add(c.name);
+        return api.row(n.table.displayName(), n.table.qualifiedName(), values, pk, schema, n.parentRows, n.childRows);
     }
 
     static Object readValue(ResultSet rs, int i, ColumnDef c) throws SQLException {
