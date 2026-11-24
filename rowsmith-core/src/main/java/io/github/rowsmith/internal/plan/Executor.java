@@ -2,12 +2,15 @@ package io.github.rowsmith.internal.plan;
 
 import io.github.rowsmith.ErrorCode;
 import io.github.rowsmith.Row;
+import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.internal.gen.Literals;
 import io.github.rowsmith.internal.gen.TypeKind;
+import io.github.rowsmith.internal.schema.CheckConstraint;
 import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.PgType;
 import io.github.rowsmith.internal.schema.Schema;
+import io.github.rowsmith.internal.schema.TableDef;
 import io.github.rowsmith.internal.schema.UniqueKey;
 import io.github.rowsmith.internal.util.Strings;
 import java.sql.Array;
@@ -25,7 +28,9 @@ import java.util.Map;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.ServerErrorMessage;
 
 final class Executor {
 
@@ -121,6 +126,8 @@ final class Executor {
                 rs.next();
                 return read(n, rs);
             }
+        } catch (SQLException e) {
+            throw translate(n, ins, e);
         }
     }
 
@@ -154,6 +161,29 @@ final class Executor {
             while (elements.next()) list.add(readValue(elements, 2, elementType));
             return list;
         }
+    }
+
+    private RowsmithException translate(Node n, Insert ins, SQLException e) {
+        ServerErrorMessage pg = e instanceof PSQLException p ? p.getServerErrorMessage() : null;
+        String reason = pg == null ? e.getMessage() : pg.getMessage() + (pg.getDetail() == null ? "" : " (" + pg.getDetail() + ")");
+        Map<String, Object> shown = new LinkedHashMap<>();
+        for (int i = 0; i < ins.columns().size(); i++) {
+            shown.put(ins.columns().get(i).name, ins.values().get(i) instanceof Cell.Known k ? k.value() : ins.values().get(i));
+        }
+        String where = "insert into " + n.table.displayName() + " (" + n.label + ", " + n.reason() + ") failed: ";
+        ErrorCode code = errorCode(e.getSQLState());
+        String hint = switch (code) {
+            case UNIQUE_VIOLATION -> " Hint: another row already has these values; set the key columns in the test or with RowsmithSetup.value(...).";
+            case FOREIGN_KEY_VIOLATION -> " Hint: link existing rows with set(\"fk_column\", row) or use(row) instead of raw ids.";
+            case CHECK_VIOLATION -> checkHint(n.table, pg == null ? null : pg.getConstraint());
+            default -> "";
+        };
+        return new RowsmithException(code, where + reason + "." + hint + " Values: " + shown, e);
+    }
+
+    private static String checkHint(TableDef t, String constraint) {
+        for (CheckConstraint ch : t.checks) if (ch.name.equals(constraint)) return " Constraint: " + ch.definition() + ".";
+        return "";
     }
 
     static ErrorCode errorCode(String sqlState) {
