@@ -150,4 +150,14 @@ public final class Rowsmith {
             throw withSite(e, site);
         }
     }
+
+    /** Loads an existing row by primary key, e.g. to pass it to {@link RowSpec#use(Row)}. */
+    public Row find(String table, Object id) {
+        return engine.find(table, id);
+    }
+
+    /** Loads an existing row by primary key. */
+    public Row find(Table table, Object id) {
+        return find(table.qualifiedName(), id);
+    }
 }

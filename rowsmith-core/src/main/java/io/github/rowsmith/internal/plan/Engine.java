@@ -1,23 +1,31 @@
 package io.github.rowsmith.internal.plan;
 
 import io.github.rowsmith.ErrorCode;
+import io.github.rowsmith.PgEnum;
 import io.github.rowsmith.Plan;
 import io.github.rowsmith.Row;
 import io.github.rowsmith.RowSpec;
 import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.internal.config.RowsmithClock;
+import io.github.rowsmith.internal.gen.Literals;
 import io.github.rowsmith.internal.gen.ValueGenerator;
 import io.github.rowsmith.internal.schema.CatalogReader;
 import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.Schema;
 import io.github.rowsmith.internal.schema.TableDef;
+import io.github.rowsmith.internal.schema.UniqueKey;
 import io.github.rowsmith.internal.util.Savepoints;
+import io.github.rowsmith.internal.util.Strings;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -170,5 +178,39 @@ public final class Engine {
             ex.execute(order, conn);
             return null;
         });
+    }
+
+    public Row find(String table, Object id) {
+        var t = schema().table(table);
+        UniqueKey pk = t.primaryKey();
+        if (pk == null || pk.columns.size() != 1) {
+            throw new RowsmithException(ErrorCode.NO_SINGLE_PRIMARY_KEY, "find(\"" + table + "\", id) needs a single-column primary key");
+        }
+        var c = pk.columns.get(0);
+        String idText = Literals.toText(id instanceof PgEnum e ? e.label() : id);
+        Connection conn = null;
+        try {
+            conn = connections.get();
+            try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM " + t.sqlName() + " WHERE "
+                    + Strings.quoteIdent(c.name) + " = ?::" + Executor.castFor(c.type, c))) {
+                ps.setObject(1, idText, Types.OTHER);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new RowsmithException(ErrorCode.ROW_NOT_FOUND, "no " + t.displayName() + " row with " + c.name + " = " + idText);
+                    }
+                    Map<String, Object> values = new LinkedHashMap<>();
+                    for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+                        String name = rs.getMetaData().getColumnName(i);
+                        var col = t.column(name);
+                        values.put(name, col == null ? rs.getObject(i) : Executor.readValue(rs, i, col));
+                    }
+                    return api.row(t.displayName(), t.qualifiedName(), values, List.of(c.name), schema(), Map.of(), Map.of());
+                }
+            }
+        } catch (SQLException e) {
+            throw new RowsmithException(Executor.errorCode(e.getSQLState()), "find failed: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) connections.release(conn);
+        }
     }
 }
