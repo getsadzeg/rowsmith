@@ -38,7 +38,12 @@ interface Connections {
     }
 
     static Connections of(DataSource ds) {
-        return new Plain(ds);
+        try {
+            Class.forName("org.springframework.jdbc.datasource.DataSourceUtils", false, Connections.class.getClassLoader());
+            return new SpringConnections(ds);
+        } catch (ClassNotFoundException | LinkageError e) {
+            return new Plain(ds);
+        }
     }
 
     record Plain(DataSource ds) implements Connections {
