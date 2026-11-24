@@ -4,8 +4,10 @@ import io.github.rowsmith.ErrorCode;
 import io.github.rowsmith.RowSpec;
 import io.github.rowsmith.RowsmithException;
 import io.github.rowsmith.internal.schema.ForeignKey;
+import io.github.rowsmith.internal.schema.TableDef;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +35,21 @@ final class Planner {
 
     List<Node> plan(List<RowSpec> roots) {
         nodes = expander.expand(roots);
+        skipTakenNumbers();
         return topo();
+    }
+
+    private void skipTakenNumbers() {
+        Map<TableDef, List<Node>> byTable = new LinkedHashMap<>();
+        for (Node n : nodes) if (!n.model.keysWithoutFk.isEmpty()) byTable.computeIfAbsent(n.table, k -> new ArrayList<>()).add(n);
+        boolean moved = false;
+        for (List<Node> rows : byTable.values()) moved |= new NumberPlacer(rows, db, values, keys, filler, errors).place();
+        if (!moved) return;
+        nodes.forEach(keys::unregister);
+        for (Node n : nodes) {
+            keys.checkKeys(n, true);
+            keys.register(n, true);
+        }
     }
 
     private List<Node> topo() {
