@@ -3,6 +3,8 @@ package io.github.rowsmith.internal.plan;
 import io.github.rowsmith.ErrorCode;
 import io.github.rowsmith.RowSpec;
 import io.github.rowsmith.RowsmithException;
+import io.github.rowsmith.ValueSource;
+import io.github.rowsmith.internal.schema.ColumnDef;
 import io.github.rowsmith.internal.schema.ForeignKey;
 import io.github.rowsmith.internal.schema.TableDef;
 import java.util.ArrayList;
@@ -87,5 +89,36 @@ final class Planner {
                     + String.join(", ", stuck) + ". Make one FK nullable or DEFERRABLE, or create the rows in separate calls");
         }
         return order;
+    }
+
+    private static ValueSource sourceOf(Node n, ColumnDef c) {
+        ValueSource s = n.sources.get(c);
+        return switch (s) {
+            case DATABASE_DEFAULT, LEFT_NULL, ROWSMITH -> n.assignment(c) instanceof Assignment.Value ? ValueSource.ROWSMITH : unset(n, c);
+            case PARENT_ROW -> n.assignment(c) instanceof Assignment.FromParent ? s : unset(n, c);
+            default -> s;
+        };
+    }
+
+    private static ValueSource unset(Node n, ColumnDef c) {
+        return c.hasDefault() && !(n.assignment(c) instanceof Assignment.Null) ? ValueSource.DATABASE_DEFAULT : ValueSource.LEFT_NULL;
+    }
+
+    private static Object displayed(Cell v) {
+        return v instanceof Cell.Known k ? k.value() : v;
+    }
+
+    Map<String, ValueSource> displaySources(Node n) {
+        Map<String, ValueSource> out = new LinkedHashMap<>();
+        for (ColumnDef c : n.table.columns()) out.put(c.name, sourceOf(n, c));
+        return out;
+    }
+
+    Map<String, Object> displayValues(Node n) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (ColumnDef c : n.table.columns()) {
+            if (!(n.assignment(c) instanceof Assignment.Default)) out.put(c.name, displayed(n.cell(c)));
+        }
+        return out;
     }
 }

@@ -1,0 +1,14 @@
+INSERT INTO "public"."customer" ("first_name", "last_name", "email", "date_of_birth") VALUES ('first_name-1'::text, 'last_name-1'::text, 'email-1'::varchar, '2009-12-31'::date);
+INSERT INTO "public"."merchant" ("name", "country") VALUES ('name-1'::text, '01'::bpchar);
+INSERT INTO "public"."store" ("merchant_id", "name", "city") VALUES (<merchant#1.id>, 'name-1'::text, 'city-1'::text);
+INSERT INTO "public"."loan" ("customer_id", "store_id", "principal", "term_months", "status", "originated_on") VALUES (<customer#1.id>, <store#1.id>, '1.00'::money_amount, '1'::integer, 'PENDING'::loan_status, '2026-01-16'::date);
+INSERT INTO "public"."installment" ("loan_id", "seq", "due_date", "amount", "status") VALUES (<loan#1.id>, '1'::integer, '2026-01-16'::date, '1.00'::numeric, 'UNPAID'::text);
+INSERT INTO "public"."installment" ("loan_id", "seq", "due_date", "amount", "status") VALUES (<loan#1.id>, '2'::integer, '2026-01-17'::date, '2.00'::numeric, 'UNPAID'::text);
+INSERT INTO "public"."installment" ("loan_id", "seq", "due_date", "amount", "status") VALUES (<loan#1.id>, '3'::integer, '2026-01-18'::date, '3.00'::numeric, 'UNPAID'::text);
+INSERT INTO "public"."dispute" ("loan_id", "status", "reason") VALUES (<loan#1.id>, 'OPEN'::text, 'reason-1'::text);
+INSERT INTO "public"."customer" ("first_name", "last_name", "email", "date_of_birth") VALUES ('first_name-1'::text, 'last_name-1'::text, 'email-1'::varchar, '2009-12-31'::date);
+INSERT INTO "public"."customer_kyc" ("customer_id", "level") VALUES (<customer#1.id>, 'BASIC'::text);
+INSERT INTO "public"."customer" ("first_name", "last_name", "email", "date_of_birth") VALUES ('first_name-2'::text, 'last_name-2'::text, 'email-2'::varchar, '2009-12-30'::date);
+INSERT INTO "public"."customer_kyc" ("customer_id", "level") VALUES (<customer#2.id>, 'BASIC'::text);
+INSERT INTO "public"."customer" ("first_name", "last_name", "email", "date_of_birth") VALUES ('first_name-3'::text, 'last_name-3'::text, 'email-3'::varchar, '2009-12-29'::date);
+INSERT INTO "public"."customer_kyc" ("customer_id", "level") VALUES (<customer#3.id>, 'BASIC'::text);

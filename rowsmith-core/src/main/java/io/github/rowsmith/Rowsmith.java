@@ -93,6 +93,31 @@ public final class Rowsmith {
         return createMany(table.qualifiedName(), count, spec);
     }
 
+    public Plan plan(Table table) {
+        return plan(table.qualifiedName());
+    }
+
+    public Plan plan(Table table, Consumer<RowSpec> spec) {
+        return plan(table.qualifiedName(), spec);
+    }
+
+    public Plan planMany(Table table, int count, Consumer<RowSpec> spec) {
+        return planMany(table.qualifiedName(), count, spec);
+    }
+
+    /** Plans without inserting anything: the rows and SQL that create(...) would produce. */
+    public Plan plan(String table) {
+        return plan(table, s -> {});
+    }
+
+    public Plan plan(String table, Consumer<RowSpec> spec) {
+        return plan(List.of(RowSpec.of(table, spec)));
+    }
+
+    public Plan planMany(String table, int count, Consumer<RowSpec> spec) {
+        return plan(specs(table, count, spec));
+    }
+
     private static List<RowSpec> specs(String table, int count, Consumer<RowSpec> spec) {
         if (count < 0) throw new IllegalArgumentException("count must be >= 0, was " + count);
         List<RowSpec> specs = new ArrayList<>();
@@ -105,6 +130,16 @@ public final class Rowsmith {
         RowsmithException r = new RowsmithException(e.code(), e.detail() + " " + site, e.getCause());
         r.setStackTrace(e.getStackTrace());
         return r;
+    }
+
+    private Plan plan(List<RowSpec> specs) {
+        String site = CallSite.find();
+        try {
+            Engine.Planned p = engine.plan(specs);
+            return new Plan(p.rows(), p.sql());
+        } catch (RowsmithException e) {
+            throw withSite(e, site);
+        }
     }
 
     private List<Row> run(List<RowSpec> specs) {

@@ -1,6 +1,7 @@
 package io.github.rowsmith.internal.plan;
 
 import io.github.rowsmith.ErrorCode;
+import io.github.rowsmith.Plan;
 import io.github.rowsmith.Row;
 import io.github.rowsmith.RowSpec;
 import io.github.rowsmith.RowsmithException;
@@ -37,6 +38,8 @@ public final class Engine {
     private Schema schema;
     final GenState state = new GenState();
     final ApiAccess api;
+
+    public record Planned(List<Plan.PlannedRow> rows, List<String> sql) {}
 
     public Engine(DataSource dataSource, RowsmithClock clock, List<ValuePattern> valuePatterns, ApiAccess api) {
         this.dataSource = dataSource;
@@ -99,6 +102,28 @@ public final class Engine {
 
     RowsmithClock clock() { return clock; }
     ValueGenerator generator() { return generator; }
+
+    public Planned plan(List<RowSpec> specs) {
+        Connection conn = null;
+        try {
+            conn = connections.get();
+            Planner planner = new Planner(this, state.copy(), new PgEval(conn, clock().zone()));
+            List<Node> order = planner.plan(specs);
+            Executor ex = new Executor(planner.keys, schema(), api);
+            List<Plan.PlannedRow> rows = new ArrayList<>();
+            List<String> sql = new ArrayList<>();
+            for (Node n : order) {
+                rows.add(new Plan.PlannedRow(n.label, n.table.displayName(), Collections.unmodifiableMap(planner.displayValues(n)),
+                        Collections.unmodifiableMap(planner.displaySources(n)), n.reason()));
+                sql.add(ex.insertFor(n).literalSql());
+            }
+            return new Planned(rows, sql);
+        } catch (SQLException e) {
+            throw new RowsmithException(ErrorCode.DATABASE_ERROR, "database error: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) connections.release(conn);
+        }
+    }
 
     public List<Row> create(List<RowSpec> specs) {
         Connection conn = null;
