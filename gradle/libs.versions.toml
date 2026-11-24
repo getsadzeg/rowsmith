@@ -2,6 +2,7 @@
 postgresql = "42.7.14"
 rgxgen = "3.1"
 junit = "5.14.4"
+junit5api = "5.14.4"
 assertj = "3.27.7"
 jqwik = "1.10.2"
 testcontainers = "2.0.5"
@@ -19,9 +20,12 @@ rgxgen = { module = "com.github.curious-odd-man:rgxgen", version.ref = "rgxgen" 
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+junit-testkit = { module = "org.junit.platform:junit-platform-testkit" }
+junit5-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit5api" }
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-jdbc = { module = "org.testcontainers:testcontainers-jdbc", version.ref = "testcontainers" }
 spring-jdbc = { module = "org.springframework:spring-jdbc", version.ref = "spring6" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
