@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     }
 }
 
-include("rowsmith-core", "rowsmith-junit", "rowsmith-codegen")
+include("rowsmith-core", "rowsmith-junit", "rowsmith-codegen", "rowsmith-gradle-plugin")
