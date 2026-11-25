@@ -22,6 +22,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build and test (Testcontainers, postgres:${{ matrix.pg }}-alpine)
         run: ./gradlew build -Ppg=${{ matrix.pg }} --continue
+      - name: Real-world schema coverage
+        if: always()
+        run: cat rowsmith-core/build/reports/rowsmith/realworld.md >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
