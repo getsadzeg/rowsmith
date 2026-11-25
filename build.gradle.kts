@@ -12,6 +12,26 @@ allprojects {
 
 subprojects {
     apply(plugin = "java")
+    // the Gradle plugin module publishes through java-gradle-plugin
+    if (path.startsWith(":rowsmith-") && path != ":rowsmith-gradle-plugin") {
+        apply(plugin = "maven-publish")
+        extensions.configure<PublishingExtension> {
+            publications.create<MavenPublication>("maven") {
+                from(components["java"])
+                pom {
+                    name.set(project.name)
+                    description.set(project.description)
+                    url.set("https://github.com/getsadzeg/rowsmith")
+                    licenses {
+                        license {
+                            name.set("MIT")
+                            url.set("https://opensource.org/license/mit")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     extensions.configure<JavaPluginExtension> {
         toolchain.languageVersion.set(JavaLanguageVersion.of(21))
