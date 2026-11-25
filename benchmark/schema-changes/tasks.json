@@ -1,0 +1,68 @@
+{
+  "tasks": [
+    {
+      "id": "sc1-not-null-columns",
+      "kind": "schema-change",
+      "migration": "V3__compliance_identifiers.sql",
+      "existing_tests": {
+        "baseline": [
+          "existing-tests/baseline/OfferAcceptanceServiceTest.java",
+          "existing-tests/baseline/PaymentRetryServiceTest.java"
+        ],
+        "rowsmith": [
+          "existing-tests/rowsmith/OfferAcceptanceServiceTest.java",
+          "existing-tests/rowsmith/PaymentRetryServiceTest.java"
+        ]
+      },
+      "prompt": "A new Flyway migration `src/main/resources/db/migration/V3__compliance_identifiers.sql` was just added (do not modify or remove it). Make sure the full test suite passes with it (`./gradlew test`). Fix whatever is needed, but do not delete, disable or weaken existing tests."
+    },
+    {
+      "id": "sc2-required-fk",
+      "kind": "schema-change",
+      "migration": "V3__brands.sql",
+      "existing_tests": {
+        "baseline": [
+          "existing-tests/baseline/OfferAcceptanceServiceTest.java",
+          "existing-tests/baseline/PaymentRetryServiceTest.java"
+        ],
+        "rowsmith": [
+          "existing-tests/rowsmith/OfferAcceptanceServiceTest.java",
+          "existing-tests/rowsmith/PaymentRetryServiceTest.java"
+        ]
+      },
+      "prompt": "A new Flyway migration `src/main/resources/db/migration/V3__brands.sql` was just added (do not modify or remove it). Make sure the full test suite passes with it (`./gradlew test`). Fix whatever is needed, but do not delete, disable or weaken existing tests."
+    },
+    {
+      "id": "sc3-chain-insert",
+      "kind": "schema-change",
+      "migration": "V3__merchant_contracts.sql",
+      "existing_tests": {
+        "baseline": [
+          "existing-tests/baseline/OfferAcceptanceServiceTest.java",
+          "existing-tests/baseline/PaymentRetryServiceTest.java"
+        ],
+        "rowsmith": [
+          "existing-tests/rowsmith/OfferAcceptanceServiceTest.java",
+          "existing-tests/rowsmith/PaymentRetryServiceTest.java"
+        ]
+      },
+      "prompt": "A new Flyway migration `src/main/resources/db/migration/V3__merchant_contracts.sql` was just added (do not modify or remove it). Make sure the full test suite passes with it (`./gradlew test`). Fix whatever is needed, but do not delete, disable or weaken existing tests."
+    },
+    {
+      "id": "sc4-constraints",
+      "kind": "schema-change",
+      "migration": "V3__data_quality_constraints.sql",
+      "existing_tests": {
+        "baseline": [
+          "existing-tests/baseline/OfferAcceptanceServiceTest.java",
+          "existing-tests/baseline/PaymentRetryServiceTest.java"
+        ],
+        "rowsmith": [
+          "existing-tests/rowsmith/OfferAcceptanceServiceTest.java",
+          "existing-tests/rowsmith/PaymentRetryServiceTest.java"
+        ]
+      },
+      "prompt": "A new Flyway migration `src/main/resources/db/migration/V3__data_quality_constraints.sql` was just added (do not modify or remove it). Make sure the full test suite passes with it (`./gradlew test`). Fix whatever is needed, but do not delete, disable or weaken existing tests."
+    }
+  ]
+}
