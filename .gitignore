@@ -4,8 +4,11 @@ out/
 .idea/
 *.iml
 .DS_Store
+benchmark/runs/
+benchmark/work/
 *.log
 .jqwik-database
+__pycache__/
 
 # Eclipse / jdtls (Neovim Java LSP)
 .project
