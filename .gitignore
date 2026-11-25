@@ -7,8 +7,11 @@ out/
 benchmark/runs/
 benchmark/work/
 *.log
-.jqwik-database
+benchmark/results/*
+!benchmark/results/schema-changes/
+benchmark/results/schema-changes/artifacts/
 __pycache__/
+.jqwik-database
 
 # Eclipse / jdtls (Neovim Java LSP)
 .project
