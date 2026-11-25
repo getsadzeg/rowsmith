@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 
 include("rowsmith-core", "rowsmith-junit", "rowsmith-codegen", "rowsmith-gradle-plugin")
+include("examples:lending-demo")
