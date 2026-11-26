@@ -49,15 +49,13 @@ Row task = rowsmith.create(TASK, t -> t.set(TASK.STATUS, TaskStatus.TODO));
 
 ## Quick start
 
-Not on Maven Central yet: run `./gradlew publishToMavenLocal` in this repository, then:
-
 ```kotlin
 // settings.gradle.kts
-pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }
+pluginManagement { repositories { mavenCentral(); gradlePluginPortal() } }
 
 // build.gradle.kts
 plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0" }
-repositories { mavenLocal(); mavenCentral() }
+repositories { mavenCentral() }
 dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0") }
 
 rowsmith {

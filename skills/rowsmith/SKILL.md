@@ -18,8 +18,8 @@ dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0") }
 rowsmith { packageName = "com.example.db" }
 ```
 
-Not on Maven Central yet: `./gradlew publishToMavenLocal` in the Rowsmith repo, and `mavenLocal()` in
-`repositories` and `pluginManagement`. The plugin reads the schema from Flyway migrations in
+Both come from Maven Central: add `mavenCentral()` to `repositories` and to `pluginManagement { repositories }`
+in `settings.gradle.kts`. The plugin reads the schema from Flyway migrations in
 `src/main/resources/db/migration` (others with `flyway { locations(...) }`), or from `sql("schema.sql")`,
 `url(jdbcUrl, user, password)` or `custom(className, classpath)` inside `rowsmith { }`, and on `compileTestJava`
 generates `com.example.db.Db` (name from `className`, default `Db`) into `build/generated/rowsmith/java`. Read it
