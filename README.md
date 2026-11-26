@@ -2,19 +2,46 @@
 
 **Test data for PostgreSQL, without the setup.**
 
-To test one thing, you usually insert a pile of related rows first: parents, required columns, values that pass
-every constraint. And every migration breaks that setup.
+Rowsmith is a Java library for integration tests. You say which row you need and which values matter to the test.
+It creates that row and every row it depends on by reading your schema. Your tests keep working when the schema
+changes.
 
-Rowsmith reads your database schema and creates everything for you. You only write what your test is about.
+## The problem
+
+Say your app tracks tasks. A task belongs to a project, a project to a workspace, and a workspace has an owner. To
+test anything about one task, you first write this:
 
 ```java
-// before: insert a user, a workspace, a project, then the task
-// after:
+Long alice = jdbc.queryForObject("INSERT INTO app_user (email, display_name) VALUES ('alice@example.com', 'Alice') RETURNING id", Long.class);
+Long acme = jdbc.queryForObject("INSERT INTO workspace (owner_id, slug, name, plan) VALUES (?, 'acme', 'Acme', 'free') RETURNING id", Long.class, alice);
+UUID web = jdbc.queryForObject("INSERT INTO project (workspace_id, name, starts_on) VALUES (?, 'Website', current_date) RETURNING id", UUID.class, acme);
+jdbc.update("INSERT INTO task (project_id, reporter_id, title, status) VALUES (?, ?, 'Fix login', 'todo')", web, alice);
+```
+
+The test only cares about `status`. Everything else is there to satisfy foreign keys, NOT NULL, UNIQUE and CHECK
+constraints, and the next migration that adds a required column breaks every one of these setups.
+
+With Rowsmith:
+
+```java
 Row task = rowsmith.create(TASK, t -> t.set(TASK.STATUS, TaskStatus.TODO));
 ```
 
-The workspace, project and every required column are filled in, valid and connected. When a migration adds a
-column or a foreign key, this line keeps working.
+`TASK` and `TaskStatus` are generated from your migrations.
+
+## Features
+
+- **Creates the parents for you.** Required foreign keys are followed and their rows created automatically.
+- **Values that pass your constraints.** NOT NULL, UNIQUE, CHECK, enums, lengths and numeric precision, with CHECKs
+  verified by Postgres itself.
+- **Survives migrations.** New required columns and foreign keys are filled in without touching the test.
+- **Typed.** Tables, columns and enum values are generated as Java constants, so a renamed column fails to compile
+  instead of failing at runtime.
+- **Clear errors.** When it can't pick a safe value, it stops and names the constraint, what to set and the test line.
+- **Dry run.** `plan()` shows the SQL and where each value comes from, without inserting anything.
+- **JUnit 5 and Spring.** It joins a rolled-back `@Transactional` test, or cleans up after itself.
+- **Built for coding agents.** It ships a Claude Code skill, and an agent can act on its errors directly. In the
+  [benchmark](benchmark/), migrations broke 47 of 52 hand-written test setups and 0 of 52 Rowsmith ones.
 
 ## Quick start
 
