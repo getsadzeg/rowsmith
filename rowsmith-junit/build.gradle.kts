@@ -13,7 +13,7 @@ dependencies {
     compileOnly(libs.spring.context)
     compileOnly(libs.spring.jdbc)
 
-    testImplementation(platform(libs.junit.bom))
+    testImplementation(platform(libs.junit.bom.oldest))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.launcher)
     testImplementation(libs.junit.testkit)

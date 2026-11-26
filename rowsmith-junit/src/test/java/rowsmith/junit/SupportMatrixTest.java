@@ -27,6 +27,7 @@ import org.junit.jupiter.api.extension.ParameterResolver;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.platform.commons.support.AnnotationSupport;
 import org.junit.platform.commons.support.HierarchyTraversalMode;
 import org.junit.platform.commons.support.ReflectionSupport;
@@ -100,7 +101,11 @@ class SupportMatrixTest {
 
     private static long expectedTests(Class<? extends Mode> mode) {
         long lifecycles = ReflectionSupport.findNestedClasses(mode, c -> c.isAnnotationPresent(Nested.class)).size();
-        return lifecycles * AnnotationSupport.findAnnotatedMethods(Exercise.class, Test.class, HierarchyTraversalMode.TOP_DOWN).size();
+        long tests = AnnotationSupport.findAnnotatedMethods(Exercise.class, Test.class, HierarchyTraversalMode.TOP_DOWN).size();
+        long invocations = AnnotationSupport.findAnnotatedMethods(Exercise.class, ValueSource.class, HierarchyTraversalMode.TOP_DOWN).stream()
+                .mapToLong(m -> m.getAnnotation(ValueSource.class).ints().length)
+                .sum();
+        return lifecycles * (tests + invocations);
     }
 
     private static Map<String, String> snapshot() {
@@ -189,9 +194,10 @@ class SupportMatrixTest {
             assertThatThrownBy(() -> jdbc.update(scenario.danglingInsert, MISSING_ID)).isInstanceOf(DataIntegrityViolationException.class);
         }
 
-        @Test
+        @ParameterizedTest
+        @ValueSource(ints = {1, 2})
         @Order(2)
-        void theFirstTestsRowsAreGoneAndTheClassFixturesStay(Rowsmith parameter, Scenario scenario) {
+        void earlierTestsRowsAreGoneAndTheClassFixturesStay(int run, Rowsmith parameter, Scenario scenario) {
             assertThat(count(scenario)).isEqualTo(APP_ROWS + fixtures().size());
             fixtures().forEach(fixture -> assertVisible(scenario, fixture));
             assertVisible(scenario, rowsmith(parameter).create(scenario.root));

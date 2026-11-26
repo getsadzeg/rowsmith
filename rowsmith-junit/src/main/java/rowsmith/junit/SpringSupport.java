@@ -3,7 +3,6 @@ package rowsmith.junit;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Optional;
-import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -27,7 +26,7 @@ final class SpringSupport {
     }
 
     private static boolean isSpringTest(ExtensionContext ec) {
-        return Stream.concat(ec.getEnclosingTestClasses().stream(), Stream.of(ec.getRequiredTestClass()))
+        return RowsmithExtension.testClasses(ec).stream()
                 .flatMap(c -> AnnotationSupport.findRepeatableAnnotations(c, ExtendWith.class).stream())
                 .anyMatch(e -> Arrays.asList(e.value()).contains(SpringExtension.class));
     }

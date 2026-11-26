@@ -3,8 +3,8 @@ package rowsmith.junit;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.time.Clock;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -92,7 +92,16 @@ public final class RowsmithExtension
     }
 
     private Optional<RowsmithTest> settings(ExtensionContext ec) {
-        return AnnotationSupport.findAnnotation(ec.getRequiredTestClass(), RowsmithTest.class, ec.getEnclosingTestClasses());
+        List<Class<?>> classes = testClasses(ec);
+        return AnnotationSupport.findAnnotation(ec.getRequiredTestClass(), RowsmithTest.class, classes.subList(0, classes.size() - 1));
+    }
+
+    static List<Class<?>> testClasses(ExtensionContext ec) {
+        Deque<Class<?>> classes = new ArrayDeque<>();
+        for (Optional<ExtensionContext> c = Optional.of(ec); c.isPresent(); c = c.get().getParent()) {
+            c.get().getTestClass().filter(t -> !t.equals(classes.peekFirst())).ifPresent(classes::addFirst);
+        }
+        return List.copyOf(classes);
     }
 
     private Rowsmith create(ExtensionContext ec) {
@@ -124,10 +133,7 @@ public final class RowsmithExtension
     }
 
     private static List<Class<?>> innermostFirst(ExtensionContext ec) {
-        List<Class<?>> classes = new ArrayList<>(ec.getEnclosingTestClasses());
-        classes.add(ec.getRequiredTestClass());
-        Collections.reverse(classes);
-        return classes;
+        return testClasses(ec).reversed();
     }
 
     private static Object read(Field f, Object instance) {
