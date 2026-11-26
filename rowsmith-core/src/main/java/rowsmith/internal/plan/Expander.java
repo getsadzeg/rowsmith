@@ -67,6 +67,7 @@ final class Expander {
         Node n = newNode(t, origin, related, via);
         n.uses.addAll(inheritedUses);
         n.uses.addAll(spec.uses());
+        n.ownUses.addAll(spec.uses());
         for (Map.Entry<String, Row> e : spec.usesByColumn().entrySet()) RowFiller.useRow(n, Schema.column(n.table, e.getKey()), e.getValue());
         for (Map.Entry<String, Object> e : spec.values().entrySet()) filler.applyValue(n, e.getKey(), e.getValue(), ValueSource.USER);
         if (origin == Node.Origin.PARENT && via.columns.size() > 1) inheritKeyFromChild(n);
@@ -178,6 +179,7 @@ final class Expander {
                 return;
             }
         }
+        for (Row r : n.ownUses) if (r.qualifiedTable().equals(fk.refTable().qualifiedName())) throw useConflict(n, fk, r);
         if (!fk.required()) return;
         Node shared = findShared(n, fk);
         if (shared != null) {
@@ -236,6 +238,27 @@ final class Expander {
             if (!(parentCell.apply(fk.refColumns().get(i)) instanceof Cell.Known(Object p)) || !Boolean.TRUE.equals(SqlValues.equal(v.value(), p))) return false;
         }
         return true;
+    }
+
+    private static RowsmithException useConflict(Node n, ForeignKey fk, Row used) {
+        for (int i = 0; i < fk.columns.size(); i++) {
+            ColumnDef childColumn = fk.columns.get(i);
+            ColumnDef parentColumn = fk.refColumns().get(i);
+            if (!(n.assignment(childColumn) instanceof Assignment.Value v)) continue;
+            Object p = used.values().get(parentColumn.name);
+            if (Boolean.TRUE.equals(SqlValues.equal(v.value(), p))) continue;
+            return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, "use(" + rowLabel(fk.refTable(), used) + ") has " + parentColumn.name + " = " + p
+                    + ", but " + n.table.displayName() + "." + childColumn.name + " is set to " + v.value() + "; drop one of them");
+        }
+        throw new IllegalStateException("no conflicting column on " + fk.describe());
+    }
+
+    private static String rowLabel(TableDef t, Row r) {
+        UniqueKey pk = t.primaryKey();
+        if (pk == null) return t.displayName() + r.values();
+        List<String> ids = new ArrayList<>();
+        for (ColumnDef c : pk.columns) ids.add(String.valueOf(r.values().get(c.name)));
+        return t.displayName() + "#" + String.join(",", ids);
     }
 
     private Node autoParent(ForeignKey fk, Node child) {

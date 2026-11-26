@@ -26,6 +26,10 @@ class MultiColumnForeignKeyTest {
                   CONSTRAINT invoice_amount_check CHECK (amount > 0));
                 CREATE TABLE review (id serial PRIMARY KEY, appointment_id bigint NOT NULL, appointment_status text NOT NULL,
                   FOREIGN KEY (appointment_id, appointment_status) REFERENCES appointment (id, status));
+                CREATE TABLE patient (id serial PRIMARY KEY);
+                CREATE TABLE booking_note (id serial PRIMARY KEY, patient_id int NOT NULL REFERENCES patient,
+                  appointment_id bigint NOT NULL, appointment_status text NOT NULL,
+                  FOREIGN KEY (appointment_id, appointment_status) REFERENCES appointment (id, status));
                 CREATE TABLE visit (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, kind text NOT NULL CHECK (kind = 'walk_in'),
                   UNIQUE (id, kind));
                 CREATE TABLE visit_note (id serial PRIMARY KEY, visit_id bigint NOT NULL, visit_kind text NOT NULL,
@@ -57,15 +61,35 @@ class MultiColumnForeignKeyTest {
     }
 
     @Test
-    void aSharedOrUsedParentMustMatchTheValuesSetOnTheKey() {
+    void aUsedParentIsLinkedWhenItMatchesTheValuesSetOnTheKey() {
         Rowsmith rs = Rowsmith.of(ds);
         Row cancelled = rs.create("appointment", a -> a.set("status", "cancelled"));
-        Row usedWhenItMatches = rs.create("review", r -> r.use(cancelled).set("appointment_status", "cancelled"));
-        Row freshWhenItDoesNot = rs.create("review", r -> r.use(cancelled).set("appointment_status", "completed"));
+        Row review = rs.create("review", r -> r.use(cancelled).set("appointment_status", "cancelled"));
 
-        assertThat(usedWhenItMatches.get("appointment_id")).isEqualTo(cancelled.id());
-        assertThat(freshWhenItDoesNot.get("appointment_id")).isNotEqualTo(cancelled.id());
-        assertThat(freshWhenItDoesNot.parent("appointment").getString("status")).isEqualTo("completed");
+        assertThat(review.get("appointment_id")).isEqualTo(cancelled.id());
+    }
+
+    @Test
+    void aUsedParentThatContradictsAValueSetOnTheKeyFails() {
+        Rowsmith rs = Rowsmith.of(ds);
+        Row booked = rs.create("appointment");
+
+        assertThatThrownBy(() -> rs.create("invoice", i -> i.use(booked).set("appointment_status", "completed")))
+                .isInstanceOfSatisfying(RowsmithException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
+                    assertThat(e.getMessage()).isEqualTo("Rowsmith: use(appointment#" + booked.id() + ") has status = booked, but invoice.appointment_status"
+                            + " is set to completed; drop one of them (MultiColumnForeignKeyTest:77)");
+                });
+    }
+
+    @Test
+    void anAutoSharedParentIsSharedOnlyWhenItMatchesTheValuesSetOnTheKey() {
+        Plan plan = Rowsmith.of(ds).plan("patient", p -> p
+                .with("booking_note", n -> n.set("appointment_status", "cancelled"))
+                .with("booking_note", n -> n.set("appointment_status", "cancelled"))
+                .with("booking_note", n -> n.set("appointment_status", "completed")));
+
+        assertThat(plan.rows()).filteredOn(r -> r.table().equals("appointment")).hasSize(2);
     }
 
     @Test

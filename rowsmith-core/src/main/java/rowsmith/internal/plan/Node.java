@@ -32,6 +32,7 @@ final class Node {
     final Set<ForeignKey> autoShared = new HashSet<>();
     final Set<ForeignKey> deferred = new HashSet<>();
     final List<Row> uses = new ArrayList<>();
+    final List<Row> ownUses = new ArrayList<>();
     final Map<String, Row> parentRows = new LinkedHashMap<>();
     final Map<String, List<Row>> childRows = new LinkedHashMap<>();
     long number;
