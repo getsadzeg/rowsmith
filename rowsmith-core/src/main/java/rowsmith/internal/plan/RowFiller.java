@@ -120,7 +120,7 @@ final class RowFiller {
             n.sources.put(c, source);
             switch (source) {
                 case SETUP -> applyValue(n, c.name, engine.pattern(c).apply(Math.toIntExact(n.number)), ValueSource.SETUP);
-                case ROWSMITH -> n.assign(c, new Assignment.Value(gen(n, c, n.model.rulesFor(c))));
+                case ROWSMITH -> n.assign(c, new Assignment.Value(gen(n, c, n.rulesFor(c))));
                 default -> { }
             }
         }
@@ -136,13 +136,14 @@ final class RowFiller {
         if (engine.pattern(c) != null) return ValueSource.SETUP;
         if (n.model.fkColumns.contains(c)) return ValueSource.PARENT_ROW;
         if (c.isIdentity() || c.drawsFromSequence()) return ValueSource.DATABASE_GENERATED;
+        if (n.inheritsRules(c)) return ValueSource.ROWSMITH;
         if (c.hasDefault() && !n.model.generateOverDefault(c)) return ValueSource.DATABASE_DEFAULT;
         if (n.model.leaveNull(c)) return ValueSource.LEFT_NULL;
         return ValueSource.ROWSMITH;
     }
 
     void regenerate(Node n, ColumnDef c, ColumnRules extra) {
-        n.assign(c, new Assignment.Value(gen(n, c, n.model.rulesFor(c).and(extra))));
+        n.assign(c, new Assignment.Value(gen(n, c, n.rulesFor(c).and(extra))));
     }
 
     private Object gen(Node n, ColumnDef c, ColumnRules rules) {

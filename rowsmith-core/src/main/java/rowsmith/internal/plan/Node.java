@@ -15,6 +15,7 @@ import rowsmith.internal.schema.ColumnDef;
 import rowsmith.internal.schema.ForeignKey;
 import rowsmith.internal.schema.TableDef;
 import rowsmith.internal.schema.UniqueKey;
+import rowsmith.internal.sql.ColumnRules;
 
 final class Node {
     final int id;
@@ -25,6 +26,7 @@ final class Node {
     final Node related;
     final ForeignKey via;
     private final Map<ColumnDef, Assignment> assignments = new HashMap<>();
+    private final Map<ColumnDef, ColumnRules> inheritedRules = new HashMap<>();
     final Map<ColumnDef, ValueSource> sources = new HashMap<>();
     private final Map<ForeignKey, Ref> refs = new LinkedHashMap<>();
     final Set<ForeignKey> autoShared = new HashSet<>();
@@ -81,6 +83,19 @@ final class Node {
             if (isNumbered(c) && uk.readColumns().contains(c.name)) out.add(c.name);
         }
         return out;
+    }
+
+    void inheritRules(ColumnDef c, ColumnRules rules) {
+        if (!rules.isEmpty()) inheritedRules.merge(c, rules, ColumnRules::and);
+    }
+
+    boolean inheritsRules(ColumnDef c) {
+        return inheritedRules.containsKey(c);
+    }
+
+    ColumnRules rulesFor(ColumnDef c) {
+        ColumnRules own = model.rulesFor(c);
+        return inheritsRules(c) ? own.and(inheritedRules.get(c)) : own;
     }
 
     Assignment assignment(ColumnDef c) {

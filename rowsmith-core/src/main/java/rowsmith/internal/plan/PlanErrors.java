@@ -105,6 +105,10 @@ final class PlanErrors {
             if (c == null) continue;
             vals.add(name + " = " + show(values.valueOf(n, name)));
             if (n.sources.get(c) == ValueSource.SETUP) sources.add(name + " from " + setupValue(c));
+            if (n.assignment(c) instanceof Assignment.FromParent(ForeignKey fk, int i)) sources.add(fromParent(c, fk, fk.refColumns().get(i)));
+            if (n.origin == Node.Origin.PARENT && n.sources.get(c) == ValueSource.USER && n.via.refColumns().contains(c)) {
+                sources.add(name + " copied from " + n.related.label + "." + n.via.columns.get(n.via.refColumns().indexOf(c)).name);
+            }
         }
         StringBuilder sb = new StringBuilder();
         if (vals.size() == 1) sb.append(n.table.displayName()).append('.').append(vals.get(0));
@@ -117,13 +121,20 @@ final class PlanErrors {
         return new RowsmithException(ErrorCode.CHECK_VIOLATION, sb.toString());
     }
 
+    private static String fromParent(ColumnDef c, ForeignKey fk, ColumnDef refColumn) {
+        String parent = fk.refTable().displayName();
+        return c.name + " comes from the parent " + parent + "." + refColumn.name + "; set " + refColumn.name + " on the " + parent
+                + " and pass it with use(...), or use(...) a matching " + parent + " row"
+                + (fk.columns.size() > 1 ? ", or set " + c.name + " here to create the " + parent + " with it" : "");
+    }
+
     private static String what(CheckVerifier.Failure f) {
         return f.domainColumn() != null ? "domain " + f.domainColumn().type.castName + " check " + f.check().name : "check " + f.check().name;
     }
 
     private static String allowedText(Node n, ColumnDef c) {
         if (c == null) return null;
-        ColumnRules r = n.model.rulesFor(c);
+        ColumnRules r = n.rulesFor(c);
         if (r.isEmpty()) return null;
         if (r.allowed != null) {
             List<String> a = new ArrayList<>();

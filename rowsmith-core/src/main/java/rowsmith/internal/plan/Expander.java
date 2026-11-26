@@ -10,15 +10,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import rowsmith.ErrorCode;
 import rowsmith.Row;
 import rowsmith.RowSpec;
 import rowsmith.RowsmithException;
 import rowsmith.ValueSource;
+import rowsmith.internal.schema.ColumnDef;
 import rowsmith.internal.schema.ForeignKey;
 import rowsmith.internal.schema.Schema;
 import rowsmith.internal.schema.TableDef;
 import rowsmith.internal.schema.UniqueKey;
+import rowsmith.internal.sql.SqlValues;
 
 final class Expander {
 
@@ -66,6 +69,7 @@ final class Expander {
         n.uses.addAll(spec.uses());
         for (Map.Entry<String, Row> e : spec.usesByColumn().entrySet()) RowFiller.useRow(n, Schema.column(n.table, e.getKey()), e.getValue());
         for (Map.Entry<String, Object> e : spec.values().entrySet()) filler.applyValue(n, e.getKey(), e.getValue(), ValueSource.USER);
+        if (origin == Node.Origin.PARENT && via.columns.size() > 1) inheritKeyFromChild(n);
         filler.generate(n);
         for (RowSpec.Child child : spec.children()) {
             TableDef ct = engine.schema().table(child.table());
@@ -77,6 +81,17 @@ final class Expander {
             for (int i = 0; i < child.count(); i++) expand(engine.api.spec(child.table(), child.spec()), Node.Origin.CHILD, n, fk, n.uses);
         }
         return n;
+    }
+
+    private void inheritKeyFromChild(Node parent) {
+        ForeignKey fk = parent.via;
+        Node child = parent.related;
+        for (int i = 0; i < fk.columns.size(); i++) {
+            ColumnDef childColumn = fk.columns.get(i);
+            ColumnDef parentColumn = fk.refColumns().get(i);
+            if (child.assignment(childColumn) instanceof Assignment.Value v) filler.applyValue(parent, parentColumn.name, v.value(), ValueSource.USER);
+            else parent.inheritRules(parentColumn, child.rulesFor(childColumn));
+        }
     }
 
     private static boolean isUniqueAlone(TableDef t, ForeignKey fk) {
@@ -156,9 +171,9 @@ final class Expander {
             return;
         }
         if (n.refs().containsKey(fk)) return;
-        if (specSetsAnyColumn(n, fk)) return;
+        if (specSetsWholeKey(n, fk)) return;
         for (Row r : n.uses) {
-            if (r.qualifiedTable().equals(fk.refTable().qualifiedName())) {
+            if (r.qualifiedTable().equals(fk.refTable().qualifiedName()) && matchesSetValues(n, fk, c -> new Cell.Known(r.values().get(c.name)))) {
                 n.link(fk, new Ref.Existing(r));
                 return;
             }
@@ -210,8 +225,17 @@ final class Expander {
         return false;
     }
 
-    private static boolean specSetsAnyColumn(Node n, ForeignKey fk) {
-        return fk.columns.stream().anyMatch(c -> n.assignment(c) instanceof Assignment.Value || n.assignment(c) instanceof Assignment.Null);
+    private static boolean specSetsWholeKey(Node n, ForeignKey fk) {
+        return fk.columns.stream().anyMatch(c -> n.assignment(c) instanceof Assignment.Null)
+                || fk.columns.stream().allMatch(c -> n.assignment(c) instanceof Assignment.Value);
+    }
+
+    private static boolean matchesSetValues(Node n, ForeignKey fk, Function<ColumnDef, Cell> parentCell) {
+        for (int i = 0; i < fk.columns.size(); i++) {
+            if (!(n.assignment(fk.columns.get(i)) instanceof Assignment.Value v)) continue;
+            if (!(parentCell.apply(fk.refColumns().get(i)) instanceof Cell.Known(Object p)) || !Boolean.TRUE.equals(SqlValues.equal(v.value(), p))) return false;
+        }
+        return true;
     }
 
     private Node autoParent(ForeignKey fk, Node child) {
@@ -239,7 +263,7 @@ final class Expander {
         TableDef target = fk.refTable();
         for (Node m : nodes) {
             if (m == n || m.table != target || stack.contains(m) || !m.resolved) continue;
-            if (dependsOn(m, n, new HashSet<>())) continue;
+            if (dependsOn(m, n, new HashSet<>()) || !matchesSetValues(n, fk, m::cell)) continue;
             if (sharingKeepsKeysUnique(n, fk, m)) return m;
         }
         return null;
