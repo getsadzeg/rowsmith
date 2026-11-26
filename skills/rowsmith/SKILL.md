@@ -10,12 +10,25 @@ on, and Rowsmith fills every other column and creates required parents in foreig
 migrations that add columns, CHECKs or foreign keys, so never hand-write parent rows, filler columns or raw
 `INSERT`s next to Rowsmith.
 
-## Find the table constants
+## Setup
 
-`rowsmith { packageName = "com.example.db" }` in `build.gradle(.kts)` makes the Gradle plugin generate
-`com.example.db.Db` (name from `className`, default `Db`) into `build/generated/rowsmith/java` on
-`compileTestJava`. Read it for table constants (`TASK`), typed columns (`TASK.DUE_ON` is `Column<LocalDate>`) and
-value enums (`Db.TaskStatus.DONE`). Without the plugin, use database names: `create("task", t -> t.set("status", "todo"))`.
+```kotlin
+plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0-SNAPSHOT" }
+dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0-SNAPSHOT") }
+rowsmith { packageName = "com.example.db" }
+```
+
+Not on Maven Central yet: `./gradlew publishToMavenLocal` in the Rowsmith repo, and `mavenLocal()` in
+`repositories` and `pluginManagement`. The plugin reads the schema from Flyway migrations in
+`src/main/resources/db/migration` (others with `flyway { locations(...) }`), or from `sql("schema.sql")`,
+`url(jdbcUrl, user, password)` or `custom(className, classpath)` inside `rowsmith { }`, and on `compileTestJava`
+generates `com.example.db.Db` (name from `className`, default `Db`) into `build/generated/rowsmith/java`. Read it
+for table constants (`TASK`), typed columns (`TASK.DUE_ON` is `Column<LocalDate>`) and value enums
+(`Db.TaskStatus.DONE`). Without the plugin, use database names: `create("task", t -> t.set("status", "todo"))`.
+
+Project-wide value patterns go in a `RowsmithSetup` (public no-arg constructor) named by
+`@RowsmithTest(setup = TrackerSetup.class)`; test values win:
+`public class TrackerSetup implements RowsmithSetup { public void configure(Config c) { c.value(APP_USER.EMAIL, n -> "user" + n + "@example.com"); } }`
 
 ## Write a test
 
@@ -44,7 +57,7 @@ class OverdueReminderTest {
 }
 ```
 
-Imports: `rowsmith.{Row, Rowsmith, RowSpec}`, `rowsmith.junit.RowsmithTest`.
+Imports: `rowsmith.{Row, Rowsmith, RowSpec, RowsmithSetup}`, `rowsmith.junit.RowsmithTest`.
 
 | Call | Effect |
 |---|---|
@@ -58,16 +71,15 @@ Imports: `rowsmith.{Row, Rowsmith, RowSpec}`, `rowsmith.junit.RowsmithTest`.
 | `plan(TASK, spec)`, `describe(TASK)` | dry run with SQL, schema as Rowsmith sees it |
 
 Parents are shared within one `create` call and new for each call. For two tasks in one project, create the
-project first and `use(project)`, or `create(PROJECT, p -> p.with(TASK, 2))`.
+project first and `use(project)`, or `create(PROJECT, p -> p.with(TASK, 2))`. Multi-column foreign keys are
+supported; their values come from the parent, and a value set on part of the key is given to the new parent.
 
 Setup several tests need goes in a plain method (look for an existing presets class first):
 `static void overdue(RowSpec t) { t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3)); }`,
 then `create(TASK, TaskData::overdue)`.
 
 Columns left alone: identity, generated and DEFAULT columns go to the database; nullable columns and optional FKs
-stay NULL. Arrays take a `List`, json/jsonb take JSON text. Project-wide value patterns go in a `RowsmithSetup`
-(public no-arg constructor) used with `@RowsmithTest(setup = TrackerSetup.class)`; test values win:
-`public void configure(Config c) { c.value(APP_USER.EMAIL, n -> "user" + n + "@example.com"); }`.
+stay NULL. Arrays take a `List`, json/jsonb take JSON text.
 
 ## Workflow
 
