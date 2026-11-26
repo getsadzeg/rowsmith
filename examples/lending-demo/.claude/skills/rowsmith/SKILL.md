@@ -5,18 +5,17 @@ description: Writes and fixes PostgreSQL test data in Java integration tests wit
 
 # Rowsmith test data
 
-Rowsmith reads the Postgres catalog and inserts complete rows. A test states only the values the behavior under
-test depends on; Rowsmith fills every other column and creates required parents in foreign-key order. Tests
-written this way keep passing when a migration adds a column, a CHECK or a foreign key, so do not hand-write
-parent rows, filler columns or raw `INSERT`s next to Rowsmith.
+Rowsmith reads the Postgres catalog and inserts complete rows: a test sets only the values its behavior depends
+on, and Rowsmith fills every other column and creates required parents in foreign-key order. Such tests survive
+migrations that add columns, CHECKs or foreign keys, so never hand-write parent rows, filler columns or raw
+`INSERT`s next to Rowsmith.
 
 ## Find the table constants
 
-The Gradle plugin generates a class from the schema: `rowsmith { packageName = "com.example.db" }` in
-`build.gradle(.kts)` gives `com.example.db.Db` (class name from `className`, default `Db`), written to
-`build/generated/rowsmith/java` by `compileTestJava`. Read it for table constants (`TASK`), typed columns
-(`TASK.DUE_ON` is `Column<LocalDate>`) and value enums (`Db.TaskStatus.DONE`). Without the plugin, use the
-database names as strings: `create("task", t -> t.set("status", "todo"))`.
+`rowsmith { packageName = "com.example.db" }` in `build.gradle(.kts)` makes the Gradle plugin generate
+`com.example.db.Db` (name from `className`, default `Db`) into `build/generated/rowsmith/java` on
+`compileTestJava`. Read it for table constants (`TASK`), typed columns (`TASK.DUE_ON` is `Column<LocalDate>`) and
+value enums (`Db.TaskStatus.DONE`). Without the plugin, use database names: `create("task", t -> t.set("status", "todo"))`.
 
 ## Write a test
 
@@ -57,12 +56,12 @@ Imports: `io.github.rowsmith.{Row, Rowsmith, RowSpec}`, `io.github.rowsmith.juni
 | `row.get(col)`, `row.parent(TASK.PROJECT_ID)`, `row.child(TASK)`, `row.children(TASK)` | read values, navigate rows of the same call |
 | `plan(TASK, spec)`, `describe(TASK)` | dry run with SQL, schema as Rowsmith sees it |
 
-Parents are shared within one `create` call and new for each call. For two tasks in the same project, create
-the project first and `use(project)`, or create both with `create(PROJECT, p -> p.with(TASK, 2))`.
+Parents are shared within one `create` call and new for each call. For two tasks in one project, create the
+project first and `use(project)`, or `create(PROJECT, p -> p.with(TASK, 2))`.
 
-Reuse a setup that several tests need as a plain method, so it composes and stays findable:
+Setup several tests need goes in a plain method (look for an existing presets class first):
 `static void overdue(RowSpec t) { t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3)); }`,
-then `create(TASK, TaskData::overdue)`. Look for an existing presets class before adding one.
+then `create(TASK, TaskData::overdue)`.
 
 ## Workflow
 
@@ -73,8 +72,8 @@ then `create(TASK, TaskData::overdue)`. Look for an existing presets class befor
 
 ## Reading errors
 
-Errors start with `Rowsmith:`, name the table, column and constraint, and end with the test line. They are
-raised before anything reaches the database, and a failed `create` leaves nothing behind.
+Errors start with `Rowsmith:`, name the table, column and constraint, end with the test line, and are raised
+before anything reaches the database; a failed `create` leaves nothing behind.
 
 ```
 Rowsmith: task.status = "doing" violates check task_status_check; allowed: todo, in progress, done, won't do (OverdueReminderTest:14)
@@ -82,20 +81,20 @@ Rowsmith: the generated values of task#1 do not satisfy check task_check: ((stat
 ```
 
 - "allowed: ..." or "must be ...": pick a value from the message.
-- "set X with .set(...)" (`CANNOT_GENERATE`): a CHECK links columns; set the named columns. If the value
-  matters to the test, set it there; if every test needs it, add a `RowsmithSetup.value(...)` pattern.
+- "set X with .set(...)" (`CANNOT_GENERATE`): a CHECK links columns; set the named columns, in the test if the
+  value matters there, else with a `RowsmithSetup.value(...)` pattern.
 - Unknown table or column: the message lists the valid names.
 
-Fix the spec; do not catch the exception or fall back to raw SQL, which would break again on the next migration.
+Fix the spec; do not catch the exception or fall back to raw SQL, which breaks again on the next migration.
 All codes and fixes: [reference.md](reference.md#errors).
 
 ## Transactions
 
-- `@Transactional` test: Rowsmith joins the transaction. The code under test must run in the same transaction
-  to see the rows; code in another thread or `REQUIRES_NEW` cannot.
+- `@Transactional` test: Rowsmith joins the transaction. The code under test must run in it to see the rows;
+  another thread or `REQUIRES_NEW` cannot.
 - No test transaction: Rowsmith commits and deletes its rows after each test. Rows the code under test created
   that reference them must be deleted first, or cleanup refuses (`CLEANUP_BLOCKED`).
-- Unflushed JPA entities are invisible to Rowsmith's SQL: call `entityManager.flush()` first, or create those
-  rows with Rowsmith.
+- Unflushed JPA entities are invisible to Rowsmith's SQL: `entityManager.flush()` first, or create those rows
+  with Rowsmith.
 
 Full API, `RowsmithSetup`, Gradle configuration and the error table: [reference.md](reference.md).

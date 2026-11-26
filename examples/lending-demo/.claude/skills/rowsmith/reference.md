@@ -41,8 +41,8 @@ DATABASE_GENERATED, DATABASE_DEFAULT, LEFT_NULL, ROWSMITH), `sql()`, `counts()`;
 
 ## RowsmithSetup
 
-Value patterns for a column of every generated row, by row number (1, 2, ... per table and Rowsmith). Values
-the test sets win; a pattern that breaks a constraint is an error. Needs a public no-arg constructor.
+Value patterns for a column of every generated row, by row number (1, 2, ... per table and Rowsmith). Test values
+win; a pattern that breaks a constraint is an error. Needs a public no-arg constructor.
 
 ```java
 public class TrackerSetup implements RowsmithSetup {
@@ -59,13 +59,13 @@ Use it with `@RowsmithTest(setup = TrackerSetup.class)` or `Rowsmith.builder(ds)
 
 ## Setup without Spring or JUnit
 
-`@RowsmithTest` finds the Spring context's DataSource, a `DataSource` field, or a static Testcontainers
-`PostgreSQLContainer` field. The Rowsmith comes as a field, a test method parameter or a constructor parameter.
-Without the extension: `Rowsmith.of(dataSource)` or `Rowsmith.builder(dataSource).clock(clock).build()`, and
-`cleanup()` when the rows were committed.
+`@RowsmithTest` uses the Spring context's DataSource, a `DataSource` field, or a static Testcontainers
+`PostgreSQLContainer` field, and injects the Rowsmith into a field, test method parameter or constructor parameter.
+Without it: `Rowsmith.of(dataSource)` or `Rowsmith.builder(dataSource).clock(clock).build()`, plus `cleanup()`
+when the rows were committed.
 
-The schema is read once per DataSource and run: migrate before the first test and do not change the schema
-during the run. Run tests in parallel with Gradle forks, not JUnit's in-JVM parallel mode.
+The schema is read once per DataSource: migrate before the first test, do not change it during the run. Run tests
+in parallel with Gradle forks, not JUnit's in-JVM parallel mode.
 
 ## Gradle plugin
 
@@ -80,7 +80,7 @@ rowsmith {
 }
 ```
 
-`./gradlew rowsmithGenerate` (or any test compile) regenerates the class after a migration; Docker must run.
+`./gradlew rowsmithGenerate` (or any test compile) regenerates the class after a migration; needs Docker.
 
 ## Errors
 

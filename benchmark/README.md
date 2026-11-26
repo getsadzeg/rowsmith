@@ -1,71 +1,54 @@
 # Rowsmith agent benchmark
 
-**Claim under test:** with Rowsmith, coding agents absorb schema changes at lower cost than with hand-written
-test data setup.
-
-This directory holds everything needed to reproduce the numbers in the top-level README: tasks, hidden
-oracles, the harness, raw results and the summary script.
+**Claim:** with Rowsmith, coding agents absorb schema changes at lower cost than with hand-written test data.
+Tasks, hidden oracles, harness, raw results and the summary script are all here.
 
 ## Setup
 
-- **App:** `examples/lending-demo` (Spring Boot 4.1, Java 21, PostgreSQL via Testcontainers, Flyway) plus
-  `schema-changes/overlay`, copied over it in both conditions: migration `V2__underwriting_payments_collections.sql`
-  brings it to 21 tables (credit_application → credit_decision → offer → loan, payment_method, payment_attempt,
-  collection_agent, collection_case, promise_to_pay) with FK chains 4-5 levels deep, cross-column and regex CHECKs,
-  composite uniques and partial unique indexes, and two services, `OfferAcceptanceService` and `PaymentRetryService`.
-- **Two conditions**, each run gets a fresh, standalone copy built by `scripts/prepare.py`:
-  - `baseline`: no Rowsmith. Existing tests use a realistic hand-written `TestData` helper
-    (`conditions/baseline/.../TestData.java`, JdbcTemplate inserts for merchant, store, customer, address,
-    KYC, loan, installment, dispute). JPA repositories are available too.
-  - `rowsmith`: the same app with `rowsmith-junit` on the test classpath, `rowsmith.yaml` traits,
-    and the Claude Code skill in `.claude/skills/rowsmith`. Existing tests use Rowsmith.
-  - Everything else is identical: production code, migrations, `CLAUDE.md` (only its last "Test data"
-    paragraph differs, see `conditions/*/CLAUDE-testdata.md`), the same two existing test classes
-    (5 tests) written in each condition's style.
-- **Agent:** Claude Code CLI, headless (`claude -p ... --output-format stream-json`), model `sonnet`
-  (resolved to `claude-sonnet-5-5`) at effort `high`. Effort is passed with `--effort` and verified before
-  each batch: `claude -p /model --effort high` must report `(effort: high)`. The harness refuses Sonnet
-  below high and Opus above medium.
-- **Isolation:** `--setting-sources project` (no user settings, hooks, plugins or user skills),
-  `--strict-mcp-config` (no MCP servers), `--tools Bash,Read,Edit,Write,Skill`, `--permission-mode acceptEdits`
-  with an allow-list of read-only shell commands plus `./gradlew`, `--permission-prompts none`,
-  `--max-budget-usd 5`, 40 minute timeout. Transcripts are scanned for reads of Rowsmith/benchmark internals.
+- **App:** `examples/lending-demo` (Spring Boot 4.1, Java 21, Flyway, PostgreSQL via Testcontainers) plus
+  `schema-changes/overlay`, whose `V2__underwriting_payments_collections.sql` brings it to 21 tables
+  (credit_application → credit_decision → offer → loan, payments, collections) with 4-5 level FK chains,
+  cross-column and regex CHECKs, composite and partial unique indexes, and two services,
+  `OfferAcceptanceService` and `PaymentRetryService`.
+- **Conditions** (fresh standalone copy per run, `scripts/prepare.py`):
+  - `baseline`: tests use a realistic hand-written JdbcTemplate `TestData` helper
+    (`conditions/baseline/.../TestData.java`); JPA repositories are available too.
+  - `rowsmith`: `rowsmith-junit` on the test classpath and the skill in `.claude/skills/rowsmith`; tests use
+    Rowsmith.
+  - Everything else is identical, except the "Test data" paragraph of `CLAUDE.md`
+    (`conditions/*/CLAUDE-testdata.md`).
+- **Agent:** headless Claude Code (`claude -p --output-format stream-json`), `sonnet` (`claude-sonnet-5-5`) at
+  `--effort high`, verified before each batch (`claude -p /model --effort high` must report `(effort: high)`);
+  the harness refuses Sonnet below high and Opus above medium.
+- **Isolation:** `--setting-sources project`, `--strict-mcp-config`, `--tools Bash,Read,Edit,Write,Skill`,
+  `--permission-mode acceptEdits` with a read-only allow-list plus `./gradlew`, `--permission-prompts none`,
+  `--max-budget-usd 5`, 40 min timeout. Transcripts are scanned for reads of Rowsmith/benchmark internals.
 
 ## Oracle (`scripts/oracle.py`)
 
-Success is never self-reported: the full suite must pass, the migration must be byte-identical, and every
-original test method must still exist and pass (none deleted, disabled or skipped). Production changes are
-allowed.
-
-Metrics come from the stream-json transcript: Gradle test/build invocations ("iterations"), failed ones,
-turns, input tokens (incl. cache reads/writes), output tokens, cost reported by the CLI, and agent time.
+Success is never self-reported: the full suite passes, the migration is byte-identical, and every original test
+method still exists and passes. Production changes are allowed. Metrics come from the transcript: Gradle
+test/build runs, failed runs, turns, input tokens (incl. cache), output tokens, CLI-reported cost, agent time.
 
 ## Schema changes (`schema-changes/`)
 
-How much does a migration cost a coding agent when test data is created by Rowsmith versus by the hand-written
-`TestData` helper and inline inserts?
-
-- **Start:** the 21-table app with 13 existing integration tests per condition, each in its own style:
-  the 5 base tests plus `OfferAcceptanceServiceTest` and `PaymentRetryServiceTest`
-  (`schema-changes/existing-tests/<condition>/`), which touch
-  credit_application → credit_decision → offer → loan and payment_method/payment_attempt/collection_case.
-- **Tasks** (`schema-changes/tasks.json`), four independent `V3` migrations (`schema-changes/migrations/`), each a
-  separate task with the same prompt in both conditions ("migration V3 was added; make the suite pass, do not
-  modify the migration or delete, disable or weaken tests"):
-  - sc1 `V3__compliance_identifiers.sql`: NOT NULL columns without defaults on merchant (unique, regex),
-    store (IN list), customer (regex) and payment_method.
+- **Start:** 13 existing integration tests per condition, in that condition's style
+  (`schema-changes/existing-tests/<condition>/`).
+- **Tasks** (`schema-changes/tasks.json`): four independent `V3` migrations, same prompt in both conditions
+  ("migration V3 was added; make the suite pass, do not modify the migration or delete, disable or weaken tests"):
+  - sc1 `V3__compliance_identifiers.sql`: NOT NULL columns without defaults (unique, regex, IN list).
   - sc2 `V3__brands.sql`: new `brand` table; required `brand_id` FK on customer and merchant.
-  - sc3 `V3__merchant_contracts.sql`: new `merchant_contract` table between store and merchant
-    (`store.contract_id` NOT NULL, composite FK `(contract_id, merchant_id)`, CHECKs, partial unique index).
-  - sc4 `V3__data_quality_constraints.sql`: new CHECKs (KYC provider list, SHA-256 fingerprint, semver model
-    version, corporate agent e-mail) and a partial unique index (one ACTIVE loan per customer and store).
-- **Oracle:** before any agent run, `validate_oracle.py` recorded the tests each migration breaks in
-  the untouched suites and checked that the reference fixes (`schema-changes/refs/<task>/<condition>/`) pass
+  - sc3 `V3__merchant_contracts.sql`: new `merchant_contract` between store and merchant (NOT NULL composite FK,
+    CHECKs, partial unique index).
+  - sc4 `V3__data_quality_constraints.sql`: new CHECKs and a partial unique index (one ACTIVE loan per customer
+    and store).
+- **Oracle validation:** before any agent run, `validate_oracle.py` recorded the tests each migration breaks and
+  checked that the reference fixes (`schema-changes/refs/<task>/<condition>/`) pass
   (`results/schema-changes/oracle-validation.jsonl`).
-- **Runs:** 4 tasks × 2 conditions × 2 reps, Sonnet at effort high, $0.80 per-run cap, $6 total cap, run on
-  2026-11-25 against the current library. Total spend $1.90. Every run succeeded.
+- **Runs:** 4 tasks × 2 conditions × 2 reps, Sonnet at effort high, $0.80 per-run and $6 total caps, 2026-11-25.
+  Total spend $1.90; every run succeeded.
 
-Medians of 2 runs per cell (`results/schema-changes/summary-sonnet-high.md` has IQRs and the raw `runs.jsonl`):
+Medians of 2 runs per cell (IQRs and raw runs: `results/schema-changes/summary-sonnet-high.md`, `runs.jsonl`):
 
 | Task | Condition | Tests broken (of 13) | Success | Gradle runs | Turns | Edits | Input tok (k) | Output tok (k) | Cost $ | Wall s |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -80,16 +63,10 @@ Medians of 2 runs per cell (`results/schema-changes/summary-sonnet-high.md` has 
 | **all (pooled)** | baseline | 47/52 | 8/8 | 2 | 14 | 4 | 155 | 4.1 | 0.14 | 34 |
 | | rowsmith | 0/52 | 8/8 | 1 | 13 | 0 | 156 | 2.1 | 0.11 | 25 |
 
-Notes:
-
-- No Rowsmith test broke under any migration, so in every Rowsmith run the untouched suite already passed. The
-  only Rowsmith edits (one sc2 run, one sc3 run) were optional production changes mapping the new columns on JPA
-  entities; agents in both conditions made such edits in 7 of 16 runs, and production edits are allowed for
-  these tasks.
-- With 2 runs per cell the per-task differences are small samples; the pooled row and the bootstrap CIs in the
-  summary are the better guide.
-- Gradle runs count only invocations that executed; calls refused by the allow-list are recorded separately
-  (`gradle_blocked_calls`).
+- No Rowsmith test broke under any migration. The only Rowsmith edits (one sc2, one sc3 run) were optional JPA
+  entity mappings of the new columns; agents in both conditions made such edits in 7 of 16 runs.
+- 2 runs per cell is a small sample; prefer the pooled row and the bootstrap CIs in the summary.
+- Gradle runs count only executed invocations; refused calls are recorded as `gradle_blocked_calls`.
 
 ## Reproduce
 
@@ -101,5 +78,5 @@ python3 run.py --work /tmp/rowsmith-bench-sc --reps 2 --parallel 3 --budget 0.8 
 python3 summarize.py --model sonnet-high         # writes results/schema-changes/summary-sonnet-high.{md,csv}
 ```
 
-Requires Java 21, Docker, Python 3.11+ and an authenticated `claude` CLI. Per-run artifacts (gzipped
-transcript, the agent's test sources) go to `results/schema-changes/artifacts/<run-id>/`.
+Requires Java 21, Docker, Python 3.11+ and an authenticated `claude` CLI. Per-run artifacts (gzipped transcript,
+the agent's test sources) go to `results/schema-changes/artifacts/<run-id>/`.
