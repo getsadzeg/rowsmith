@@ -173,9 +173,18 @@ class MultiColumnForeignKeyTest {
                 .isInstanceOfSatisfying(RowsmithException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.CHECK_VIOLATION);
                     assertThat(e.getMessage()).contains("visit_note.visit_kind = \"walk_in\" violates check visit_note_scheduled_check")
-                            .contains("visit_kind comes from the parent visit.kind")
-                            .contains("set kind on the visit")
-                            .contains("use(...)");
+                            .contains("[visit_kind comes from visit.kind; set it there or use(...) a matching visit]");
+                });
+    }
+
+    @Test
+    void aCheckOnAValueCopiedFromAWithParentSaysOnlyWhereTheValueComesFrom() {
+        assertThatThrownBy(() -> Rowsmith.of(ds).plan("appointment", a -> a.set("status", "booked").with("invoice", 1)))
+                .isInstanceOfSatisfying(RowsmithException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.CHECK_VIOLATION);
+                    assertThat(e.detail()).startsWith("invoice.appointment_status = \"booked\" violates check invoice_appointment_completed_check")
+                            .contains("[appointment_status comes from appointment.status; set it there or use(...) a matching appointment]")
+                            .doesNotContain("set appointment_status here");
                 });
     }
 }

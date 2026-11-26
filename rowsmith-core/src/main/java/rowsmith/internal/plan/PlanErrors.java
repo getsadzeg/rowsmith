@@ -123,9 +123,7 @@ final class PlanErrors {
 
     private static String fromParent(ColumnDef c, ForeignKey fk, ColumnDef refColumn) {
         String parent = fk.refTable().displayName();
-        return c.name + " comes from the parent " + parent + "." + refColumn.name + "; set " + refColumn.name + " on the " + parent
-                + " and pass it with use(...), or use(...) a matching " + parent + " row"
-                + (fk.columns.size() > 1 ? ", or set " + c.name + " here to create the " + parent + " with it" : "");
+        return c.name + " comes from " + parent + "." + refColumn.name + "; set it there or use(...) a matching " + parent;
     }
 
     private static String what(CheckVerifier.Failure f) {
