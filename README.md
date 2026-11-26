@@ -134,6 +134,8 @@ Rowsmith: the generated values of notification#1 do not satisfy check notificati
 - Works inside a rolled-back `@Transactional` test, or without one (then it cleans up after each test). A fresh
   `Rowsmith` is injected per test method; `@Nested` classes work. Run in parallel with Gradle forks.
 - The plugin reads Flyway migrations by default, or `sql(...)`, `url(...)` or `custom(...)`.
+- Rowsmith follows database constraints, not JPA annotations; rules that live only in your entities need a CHECK
+  or a value set in the test.
 - Tested against 476 real-world CHECK constraints and schemas like Keycloak and Pagila.
 
 More: [Claude Code skill](skills/rowsmith) · [Benchmark](benchmark/) · error codes in the `ErrorCode` Javadoc
