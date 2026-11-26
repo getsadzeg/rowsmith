@@ -1,5 +1,7 @@
 # Rowsmith
 
+[![CI](https://github.com/getsadzeg/rowsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/getsadzeg/rowsmith/actions/workflows/ci.yml)
+
 **Test data for PostgreSQL, without the setup.**
 
 Rowsmith is a Java library for integration tests. You say which row you need and which values matter to the test.
