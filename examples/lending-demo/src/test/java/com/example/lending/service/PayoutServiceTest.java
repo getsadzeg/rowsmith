@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.lending.Presets;
 import com.example.lending.TestcontainersConfiguration;
-import io.github.rowsmith.Row;
-import io.github.rowsmith.Rowsmith;
-import io.github.rowsmith.junit.RowsmithTest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -16,6 +13,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import rowsmith.Row;
+import rowsmith.Rowsmith;
+import rowsmith.junit.RowsmithTest;
 
 /** Reference solution for benchmark task t6. */
 @SpringBootTest

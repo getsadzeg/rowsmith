@@ -5,9 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.lending.Presets;
 import com.example.lending.TestcontainersConfiguration;
-import io.github.rowsmith.Row;
-import io.github.rowsmith.Rowsmith;
-import io.github.rowsmith.junit.RowsmithTest;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +12,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import rowsmith.Row;
+import rowsmith.Rowsmith;
+import rowsmith.junit.RowsmithTest;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)

@@ -1,9 +1,9 @@
 package com.example.lending;
 
-import static io.github.rowsmith.RelativeTime.now;
-import static io.github.rowsmith.RelativeTime.today;
+import static rowsmith.RelativeTime.now;
+import static rowsmith.RelativeTime.today;
 
-import io.github.rowsmith.RowSpec;
+import rowsmith.RowSpec;
 
 /** Reusable row presets for tests: plain methods, applied with {@code apply(Presets::activeLoan)}. */
 public final class Presets {

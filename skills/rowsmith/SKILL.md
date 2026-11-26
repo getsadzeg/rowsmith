@@ -1,6 +1,6 @@
 ---
 name: rowsmith
-description: Writes and fixes PostgreSQL test data in Java integration tests with the Rowsmith library, where a test sets only the values its behavior depends on and Rowsmith creates the required parent rows, NOT NULL columns and CHECK-valid, unique values from the live schema. Use whenever writing, fixing or reviewing JUnit or Spring tests that need database rows in a project that uses Rowsmith (io.github.rowsmith imports, @RowsmithTest, rowsmith-junit, the io.github.getsadzeg.rowsmith Gradle plugin), when a test fails with a "Rowsmith:" error, or when a migration broke test setup, even if the request only says "add a test for this service" or "the suite is red after the migration".
+description: Writes and fixes PostgreSQL test data in Java integration tests with the Rowsmith library, where a test sets only the values its behavior depends on and Rowsmith creates the required parent rows, NOT NULL columns and CHECK-valid, unique values from the live schema. Use whenever writing, fixing or reviewing JUnit or Spring tests that need database rows in a project that uses Rowsmith (`rowsmith.*` imports, @RowsmithTest, rowsmith-junit, the io.github.getsadzeg.rowsmith Gradle plugin), when a test fails with a "Rowsmith:" error, or when a migration broke test setup, even if the request only says "add a test for this service" or "the suite is red after the migration".
 ---
 
 # Rowsmith test data
@@ -21,7 +21,7 @@ value enums (`Db.TaskStatus.DONE`). Without the plugin, use database names: `cre
 
 ```java
 import static com.example.db.Db.*;
-import static io.github.rowsmith.RelativeTime.today;
+import static rowsmith.RelativeTime.today;
 
 @SpringBootTest
 @Transactional                      // rows join the test transaction and are rolled back
@@ -44,7 +44,7 @@ class OverdueReminderTest {
 }
 ```
 
-Imports: `io.github.rowsmith.{Row, Rowsmith, RowSpec}`, `io.github.rowsmith.junit.RowsmithTest`.
+Imports: `rowsmith.{Row, Rowsmith, RowSpec}`, `rowsmith.junit.RowsmithTest`.
 
 | Call | Effect |
 |---|---|

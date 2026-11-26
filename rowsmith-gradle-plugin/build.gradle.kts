@@ -18,7 +18,7 @@ gradlePlugin {
     plugins {
         create("rowsmith") {
             id = "io.github.getsadzeg.rowsmith"
-            implementationClass = "io.github.rowsmith.gradle.RowsmithPlugin"
+            implementationClass = "rowsmith.gradle.RowsmithPlugin"
             displayName = "Rowsmith"
             description = project.description
         }
