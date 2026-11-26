@@ -4,6 +4,8 @@
 
 **Test data for PostgreSQL, without the setup.**
 
+![Demo: the same TaskService test written with hand-written JdbcTemplate INSERTs and with Rowsmith; both test classes pass; a migration adds a required project.key column and a required task.type_id foreign key to a new task_type table; the hand-written tests then fail with a NOT NULL violation while the unchanged Rowsmith tests pass](assets/demo.gif)
+
 Rowsmith is a Java library for integration tests. You say which row you need and which values matter to the test.
 It creates that row and every row it depends on by reading your schema. Your tests keep working when the schema
 changes.
