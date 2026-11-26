@@ -98,7 +98,7 @@ rowsmith {
 | INVALID_RELATIONSHIP | `with` finds no or several FKs; `parent`/`child` not linked | follow the FKs listed; `with(child, viaFkCol, n, spec)` |
 | NO_SINGLE_PRIMARY_KEY | `id()`/`find` without a single-column PK | `row.get(...)` the key columns |
 | ROW_NOT_FOUND | `find` found nothing | check the id |
-| CANNOT_GENERATE | a CHECK links columns, values ran out, or a partition key is needed | set the named columns (test or `RowsmithSetup`) |
+| CANNOT_GENERATE | a CHECK links columns, values ran out, or a partition key is needed | set the named columns, or values that satisfy the shown CHECK (test or `RowsmithSetup`) |
 | UNSUPPORTED_TYPE | NOT NULL column of a type Rowsmith cannot generate | set it |
 | INVALID_CONFIG | setup pattern on an FK or GENERATED column; several `Clock` beans, none `@Primary` | fix the setup; mark one `@Primary` |
 | DATABASE_ERROR | database failed unexpectedly (Postgres message included) | read the Postgres message |

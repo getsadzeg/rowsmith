@@ -38,8 +38,8 @@ leaves nothing behind (one transaction, or a savepoint inside yours).
   Fix: check the id, or create the row first.
 - **`CANNOT_GENERATE`**: no generated value satisfies the constraints: a CHECK linking columns (`ends_on >= starts_on`,
   `num_nonnulls(a, b) = 1`), contradictory checks, exhausted unique values, or a partition key with no DEFAULT
-  partition. The message names the columns.
-  Fix: set them in the test, or with `RowsmithSetup.value(...)` for every test.
+  partition. The message names the column to set; for a CHECK over several columns it shows the check instead.
+  Fix: set values in the test, or with `RowsmithSetup.value(...)` for every test.
 - **`UNSUPPORTED_TYPE`**: a NOT NULL column without a default has a type Rowsmith cannot generate (`point`, ranges);
   nullable ones stay NULL.
   Fix: set it, or give the column a DEFAULT.

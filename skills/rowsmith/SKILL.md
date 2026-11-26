@@ -83,6 +83,8 @@ Rowsmith: the generated values of task#1 do not satisfy check task_check: ((stat
 - "allowed: ..." or "must be ...": pick a value from the message.
 - "set X with .set(...)" (`CANNOT_GENERATE`): a CHECK links columns; set the named columns, in the test if the
   value matters there, else with a `RowsmithSetup.value(...)` pattern.
+- "set values that satisfy it" (`CANNOT_GENERATE`): a CHECK spans several columns; set values that satisfy the check
+  shown, the same way.
 - Unknown table or column: the message lists the valid names.
 
 Fix the spec; do not catch the exception or fall back to raw SQL, which breaks again on the next migration.

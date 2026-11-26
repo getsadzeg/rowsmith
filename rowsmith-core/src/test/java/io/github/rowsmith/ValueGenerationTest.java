@@ -47,6 +47,17 @@ class ValueGenerationTest {
     }
 
     @Test
+    void checkOverSeveralColumnsAsksForValuesThatSatisfyIt() {
+        DataSource ds = Pg.withSchema("""
+                CREATE TABLE notification (id serial PRIMARY KEY, email text, slack_channel text,
+                  CHECK (num_nonnulls(email, slack_channel) = 1));
+                """);
+        assertThatThrownBy(() -> Rowsmith.of(ds).create("notification"))
+                .isInstanceOfSatisfying(RowsmithException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CANNOT_GENERATE))
+                .hasMessageContaining("(num_nonnulls(email, slack_channel) = 1); set values that satisfy it with .set(...) in the test or with RowsmithSetup.value(...)");
+    }
+
+    @Test
     void posixClassesInRegexChecks() {
         DataSource ds = Pg.withSchema("""
                 CREATE TABLE token (id serial PRIMARY KEY,

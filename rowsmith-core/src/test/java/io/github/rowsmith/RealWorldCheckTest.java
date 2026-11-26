@@ -36,6 +36,7 @@ class RealWorldCheckTest {
     static final int ROWS = 20;
     private static final Pattern HEADER = Pattern.compile("^-- case: (\\S+)\\R-- source: (\\S+)\\R-- license: (\\S+)\\R(?:-- expect: (\\w+)\\R)?(?:-- requires: PostgreSQL (\\d+)\\R)?", Pattern.MULTILINE);
     private static final Pattern SET_HINT = Pattern.compile("; set ([\\w$]+(?:, [\\w$]+)*) with \\.set\\(\\.\\.\\.\\) in the test or with RowsmithSetup\\.value\\(\\.\\.\\.\\)");
+    private static final String VALUES_HINT = "; set values that satisfy it with .set(...) in the test or with RowsmithSetup.value(...)";
     private static final Set<ErrorCode> CLEAR_CODES = Set.of(ErrorCode.CANNOT_GENERATE, ErrorCode.CHECK_VIOLATION, ErrorCode.UNSUPPORTED_TYPE);
     static final List<Result> RESULTS = new ArrayList<>();
 
@@ -93,7 +94,7 @@ class RealWorldCheckTest {
                     Result r = run(ds, c, schema, table);
                     synchronized (RESULTS) { RESULTS.add(r); }
                     assertThat(r.outcome()).as("%s (%s): %s", c.id(), r.checks(), r.detail()).isEqualTo(c.expected());
-                    if (c.expected() == Outcome.CLEAR_ERROR) {
+                    if (c.expected() == Outcome.CLEAR_ERROR && !r.detail().contains(VALUES_HINT)) {
                         assertThat(columnsToSet(r.detail())).as("columns to set in: %s", r.detail()).isNotEmpty().isSubsetOf(columns(ds, schema, table));
                     }
                 }

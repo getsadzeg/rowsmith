@@ -58,7 +58,7 @@ No Spring? Give the test a static Testcontainers `PostgreSQLContainer` field, or
 If a value can't be generated safely, Rowsmith stops and tells you exactly what to set:
 
 ```
-Rowsmith: the generated values of notification#1 do not satisfy check notification_check: (num_nonnulls(email, slack_channel) = 1); set email, slack_channel with .set(...) in the test or with RowsmithSetup.value(...) (NotificationTest:15)
+Rowsmith: the generated values of notification#1 do not satisfy check notification_check: (num_nonnulls(email, slack_channel) = 1); set values that satisfy it with .set(...) in the test or with RowsmithSetup.value(...) (NotificationTest:15)
 ```
 
 ## Good to know

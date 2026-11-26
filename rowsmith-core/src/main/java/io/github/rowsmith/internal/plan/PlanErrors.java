@@ -91,7 +91,8 @@ final class PlanErrors {
         List<String> generated = CheckVerifier.chosenByRowsmith(n, f.columns()).stream().map(c -> c.name).toList();
         if (generated.isEmpty()) return checkViolation(n, f);
         return new RowsmithException(ErrorCode.CANNOT_GENERATE, "the generated values of " + n.label + " do not satisfy " + what(f) + ": "
-                + f.check().body + "; " + setHint(generated));
+                + f.check().body + "; " + (generated.size() == 1 ? setHint(generated)
+                : "set values that satisfy it with .set(...) in the test or with RowsmithSetup.value(...)"));
     }
 
     private RowsmithException checkViolation(Node n, CheckVerifier.Failure f) {
