@@ -82,6 +82,14 @@ No Spring? Give the test a static Testcontainers `PostgreSQLContainer` field, or
 
 ## Usage
 
+Reusable setups are plain static methods, called presets:
+
+```java
+static void overdue(RowSpec t) {
+    t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3));
+}
+```
+
 **Only overdue tasks show up in the report**
 ```java
 Row late = rowsmith.create(TASK, TaskData::overdue);
@@ -105,14 +113,6 @@ Row task = rowsmith.create(TASK, t -> t.use(TASK.ASSIGNEE_ID, alice));
 tasks.unassign(task.get(TASK.ID));
 
 assertThat(rowsmith.find(TASK, task.id()).get(TASK.ASSIGNEE_ID)).isNull();
-```
-
-A preset like `TaskData::overdue` is a plain static method:
-
-```java
-static void overdue(RowSpec t) {
-    t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3));
-}
 ```
 
 Columns you don't set stay NULL if nullable, are left to database defaults and identity, or are generated to fit
