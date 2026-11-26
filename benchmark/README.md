@@ -48,7 +48,7 @@ test/build runs, failed runs, turns, input tokens (incl. cache), output tokens, 
 - **Runs:** 4 tasks × 2 conditions × 2 reps, Sonnet at effort high, $0.80 per-run and $6 total caps, 2026-11-25.
   Total spend $1.90; every run succeeded.
 
-Medians of 2 runs per cell (IQRs and raw runs: `results/schema-changes/summary-sonnet-high.md`, `runs.jsonl`):
+Medians of 2 runs per cell (raw runs: `results/schema-changes/runs.jsonl`):
 
 | Task | Condition | Tests broken (of 13) | Success | Gradle runs | Turns | Edits | Input tok (k) | Output tok (k) | Cost $ | Wall s |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -65,7 +65,11 @@ Medians of 2 runs per cell (IQRs and raw runs: `results/schema-changes/summary-s
 
 - No Rowsmith test broke under any migration. The only Rowsmith edits (one sc2, one sc3 run) were optional JPA
   entity mappings of the new columns; agents in both conditions made such edits in 7 of 16 runs.
-- 2 runs per cell is a small sample; prefer the pooled row and the bootstrap CIs in the summary.
+- 2 runs per cell is a small sample; prefer the pooled row. Pooled rowsmith / baseline median ratios (90% bootstrap
+  CI): output tokens 0.53 (0.38–0.76), edits 0.00 (0.00–0.38), cost 0.75 (0.58–1.02), wall time 0.72 (0.56–1.05),
+  Gradle runs 0.67 (0.40–1.33), turns 0.96 (0.64–1.25), input tokens 1.00 (0.60–1.33).
+- Integrity: no run read Rowsmith or benchmark internals, none timed out, all 8 Rowsmith runs loaded the skill,
+  and no agent saw a Rowsmith error.
 - Gradle runs count only executed invocations; refused calls are recorded as `gradle_blocked_calls`.
 
 ## Reproduce
@@ -75,7 +79,7 @@ Medians of 2 runs per cell (IQRs and raw runs: `results/schema-changes/summary-s
 cd benchmark/scripts
 python3 validate_oracle.py /tmp/rowsmith-oracle-sc > ../results/schema-changes/oracle-validation.jsonl
 python3 run.py --work /tmp/rowsmith-bench-sc --reps 2 --parallel 3 --budget 0.8 --total-budget 6
-python3 summarize.py --model sonnet-high         # writes results/schema-changes/summary-sonnet-high.{md,csv}
+python3 summarize.py --model sonnet-high         # medians, IQRs and bootstrap CIs
 ```
 
 Requires Java 21, Docker, Python 3.11+ and an authenticated `claude` CLI. Per-run artifacts (gzipped transcript,

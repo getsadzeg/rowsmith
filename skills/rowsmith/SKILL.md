@@ -54,6 +54,7 @@ Imports: `io.github.rowsmith.{Row, Rowsmith, RowSpec}`, `io.github.rowsmith.juni
 | `.with(TASK, n, spec)`, `.with(TASK, TASK.REPORTER_ID, n, spec)` | children of this row; name the FK when there are several |
 | `.apply(TaskData::overdue)` | a preset, later calls win |
 | `row.get(col)`, `row.parent(TASK.PROJECT_ID)`, `row.child(TASK)`, `row.children(TASK)` | read values, navigate rows of the same call |
+| `find(TASK, id)` | load an existing row from the database, e.g. to `use` it or assert on it |
 | `plan(TASK, spec)`, `describe(TASK)` | dry run with SQL, schema as Rowsmith sees it |
 
 Parents are shared within one `create` call and new for each call. For two tasks in one project, create the
@@ -62,6 +63,11 @@ project first and `use(project)`, or `create(PROJECT, p -> p.with(TASK, 2))`.
 Setup several tests need goes in a plain method (look for an existing presets class first):
 `static void overdue(RowSpec t) { t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3)); }`,
 then `create(TASK, TaskData::overdue)`.
+
+Columns left alone: identity, generated and DEFAULT columns go to the database; nullable columns and optional FKs
+stay NULL. Arrays take a `List`, json/jsonb take JSON text. Project-wide value patterns go in a `RowsmithSetup`
+(public no-arg constructor) used with `@RowsmithTest(setup = TrackerSetup.class)`; test values win:
+`public void configure(Config c) { c.value(APP_USER.EMAIL, n -> "user" + n + "@example.com"); }`.
 
 ## Workflow
 
@@ -88,7 +94,7 @@ Rowsmith: the generated values of task#1 do not satisfy check task_check: ((stat
 - Unknown table or column: the message lists the valid names.
 
 Fix the spec; do not catch the exception or fall back to raw SQL, which breaks again on the next migration.
-All codes and fixes: [reference.md](reference.md#errors).
+Each `ErrorCode` constant's Javadoc explains its code.
 
 ## Transactions
 
@@ -98,5 +104,7 @@ All codes and fixes: [reference.md](reference.md#errors).
   that reference them must be deleted first, or cleanup refuses (`CLEANUP_BLOCKED`).
 - Unflushed JPA entities are invisible to Rowsmith's SQL: `entityManager.flush()` first, or create those rows
   with Rowsmith.
-
-Full API, `RowsmithSetup`, Gradle configuration and the error table: [reference.md](reference.md).
+- Without Spring, `@RowsmithTest` uses a `DataSource` field or a static Testcontainers `PostgreSQLContainer`
+  field; outside JUnit, `Rowsmith.of(dataSource)` plus `cleanup()` for committed rows.
+- The schema is read once per DataSource: migrate before the first test. Parallelize with Gradle forks, not
+  JUnit's in-JVM parallel mode.

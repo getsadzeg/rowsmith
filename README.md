@@ -53,9 +53,49 @@ class TaskServiceTest {
 
 No Spring? Give the test a static Testcontainers `PostgreSQLContainer` field, or use `Rowsmith.of(dataSource)`.
 
+## Usage
+
+**Only overdue tasks show up in the report**
+```java
+Row late = rowsmith.create(TASK, TaskData::overdue);
+rowsmith.create(TASK, t -> t.set(TASK.DUE_ON, today().plusDays(3)));
+
+assertThat(reports.overdueTaskIds()).containsExactly(late.get(TASK.ID));
+```
+**A project's progress counts only its done tasks**
+```java
+Row project = rowsmith.create(PROJECT, p -> p
+        .with(TASK, 3, t -> t.set(TASK.STATUS, TaskStatus.DONE).set(TASK.DONE_AT, now()))
+        .with(TASK, 1, t -> t.set(TASK.STATUS, TaskStatus.TODO)));
+
+assertThat(projects.progress(project.get(PROJECT.ID))).isEqualTo(75);
+```
+**Unassigning keeps the task but clears the assignee**
+```java
+Row alice = rowsmith.create(APP_USER);
+Row task = rowsmith.create(TASK, t -> t.use(TASK.ASSIGNEE_ID, alice));
+
+tasks.unassign(task.get(TASK.ID));
+
+assertThat(rowsmith.find(TASK, task.id()).get(TASK.ASSIGNEE_ID)).isNull();
+```
+
+A preset like `TaskData::overdue` is a plain static method:
+
+```java
+static void overdue(RowSpec t) {
+    t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3));
+}
+```
+
+Columns you don't set stay NULL if nullable, are left to database defaults and identity, or are generated to fit
+your constraints. Project-wide patterns go in a `RowsmithSetup`: `c.value(APP_USER.EMAIL, n -> "user" + n + "@example.com")`.
+
+`plan(TASK, spec)` shows the SQL and where each value comes from, without inserting.
+
 ## When it can't decide
 
-If a value can't be generated safely, Rowsmith stops and tells you exactly what to set:
+If a value can't be generated safely, Rowsmith stops and tells you what to fix:
 
 ```
 Rowsmith: the generated values of notification#1 do not satisfy check notification_check: (num_nonnulls(email, slack_channel) = 1); set values that satisfy it with .set(...) in the test or with RowsmithSetup.value(...) (NotificationTest:15)
@@ -64,10 +104,14 @@ Rowsmith: the generated values of notification#1 do not satisfy check notificati
 ## Good to know
 
 - PostgreSQL 14–18. Java 21.
-- Works inside a rolled-back test transaction, or without one (then it cleans up after each test).
+- Works inside a rolled-back `@Transactional` test, or without one (then it cleans up after each test). A fresh
+  `Rowsmith` is injected per test method; `@Nested` classes work. Run in parallel with Gradle forks.
+- The plugin reads Flyway migrations by default, or `sql(...)`, `url(...)` or `custom(...)`.
 - Tested against 476 real-world CHECK constraints and schemas like Keycloak and Pagila.
 
-More: [API](docs/api.md) · [Errors](docs/errors.md) · [Benchmark](benchmark/) · [Claude Code skill](skills/rowsmith)
+More: [Claude Code skill](skills/rowsmith) · [Benchmark](benchmark/) · error codes in the `ErrorCode` Javadoc
+
+Build: `./gradlew build` (needs Docker).
 
 ## License
 

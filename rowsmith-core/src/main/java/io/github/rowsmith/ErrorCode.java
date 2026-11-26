@@ -1,8 +1,8 @@
 package io.github.rowsmith;
 
 /**
- * Stable error codes carried by every {@link RowsmithException}. The codes are documented in
- * {@code docs/errors.md}; messages may change between versions, codes will not.
+ * Stable error codes carried by every {@link RowsmithException}, each documented below; messages may change
+ * between versions, codes will not.
  */
 public enum ErrorCode {
     /** A table name does not exist in the database; the message lists the tables. */
