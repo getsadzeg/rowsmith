@@ -173,7 +173,10 @@ final class Expander {
             return;
         }
         if (n.refs().containsKey(fk)) {
-            if (setsPartOfKey(n, fk)) throw partOfKey(n, fk);
+            if (!setsPartOfKey(n, fk)) return;
+            if (!(n.refs().get(fk) instanceof Ref.Existing(Row used))) throw partOfKey(n, fk);
+            OptionalInt mismatch = firstMismatch(n, fk, used);
+            if (mismatch.isPresent()) throw useConflict(n, fk, used, mismatch.getAsInt());
             return;
         }
         if (specSetsWholeKey(n, fk)) return;
@@ -245,8 +248,27 @@ final class Expander {
     }
 
     private static RowsmithException partOfKey(Node n, ForeignKey fk) {
+        List<String> copied = copiedFromChild(n, fk);
+        if (!copied.isEmpty()) {
+            return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, n.related.label + " sets " + String.join(", ", copied) + ", which Rowsmith copies to "
+                    + n.table.displayName() + "; " + n.table.displayName() + " then sets only " + String.join(", ", setKeyColumns(n, fk)) + " of key ("
+                    + fk.columnList() + "); set the whole key (" + n.via.columnList() + ") on " + n.related.table.displayName() + ", or use(...) a matching "
+                    + n.table.displayName());
+        }
         return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, n.table.displayName() + " sets only " + String.join(", ", setKeyColumns(n, fk))
                 + " of key (" + fk.columnList() + "); set the whole key, or use(...) a matching " + fk.refTable().displayName());
+    }
+
+    private static List<String> copiedFromChild(Node n, ForeignKey fk) {
+        if (n.origin != Node.Origin.PARENT) return List.of();
+        List<String> copied = new ArrayList<>();
+        for (ColumnDef c : fk.columns) {
+            if (!(n.assignment(c) instanceof Assignment.Value)) continue;
+            int i = n.via.refColumns().indexOf(c);
+            if (i < 0 || n.sources.get(c) != ValueSource.USER) return List.of();
+            copied.add(n.via.columns.get(i).name);
+        }
+        return copied;
     }
 
     private static RowsmithException withChildSetsPartOfKey(Node n, ForeignKey fk) {
@@ -289,7 +311,7 @@ final class Expander {
         Object set = ((Assignment.Value) n.assignment(childColumn)).value();
         List<String> otherKeys = new ArrayList<>();
         for (ForeignKey other : n.table.foreignKeys) {
-            if (other != fk && other.refTable() == fk.refTable()) otherKeys.add("use(\"" + other.columns.get(0).name + "\", row)");
+            if (other != fk && other.refTable() == fk.refTable() && other.columns.size() == 1) otherKeys.add("use(\"" + other.columns.get(0).name + "\", row)");
         }
         return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, "use(" + rowLabel(fk.refTable(), used) + ") has " + parentColumn.name + " = "
                 + PlanErrors.show(used.values().get(parentColumn.name)) + ", but " + n.table.displayName() + "." + childColumn.name + " is set to "

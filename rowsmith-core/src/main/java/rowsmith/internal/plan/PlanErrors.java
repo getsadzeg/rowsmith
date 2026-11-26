@@ -105,7 +105,7 @@ final class PlanErrors {
             if (c == null) continue;
             vals.add(name + " = " + show(values.valueOf(n, name)));
             if (n.sources.get(c) == ValueSource.SETUP) sources.add(name + " from " + setupValue(c));
-            if (n.assignment(c) instanceof Assignment.FromParent(ForeignKey fk, int i)) sources.add(fromParent(c, fk, fk.refColumns().get(i)));
+            if (n.assignment(c) instanceof Assignment.FromParent(ForeignKey fk, int i)) sources.add(fromParent(n, c, fk, fk.refColumns().get(i)));
             if (n.origin == Node.Origin.PARENT && n.sources.get(c) == ValueSource.USER && n.via.refColumns().contains(c)) {
                 sources.add(name + " copied from " + n.related.label + "." + n.via.columns.get(n.via.refColumns().indexOf(c)).name);
             }
@@ -121,9 +121,9 @@ final class PlanErrors {
         return new RowsmithException(ErrorCode.CHECK_VIOLATION, sb.toString());
     }
 
-    private static String fromParent(ColumnDef c, ForeignKey fk, ColumnDef refColumn) {
+    private static String fromParent(Node n, ColumnDef c, ForeignKey fk, ColumnDef refColumn) {
         String parent = fk.refTable().displayName();
-        return c.name + " comes from " + parent + "." + refColumn.name + "; set it there or use(...) a matching " + parent;
+        return c.name + " comes from " + parent + "." + refColumn.name + "; set it there" + (fk == n.relFk() ? "" : " or use(...) a matching " + parent);
     }
 
     private static String what(CheckVerifier.Failure f) {

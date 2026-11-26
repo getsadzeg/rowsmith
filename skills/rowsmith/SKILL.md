@@ -72,8 +72,9 @@ Imports: `rowsmith.{Row, Rowsmith, RowSpec, RowsmithSetup}`, `rowsmith.junit.Row
 
 Parents are shared within one `create` call and new for each call. For two tasks in one project, create the
 project first and `use(project)`, or `create(PROJECT, p -> p.with(TASK, 2))`. Multi-column foreign keys are
-supported; their values come from the parent. Values set on part of the key go to the parent Rowsmith creates;
-otherwise set the whole key or `use(...)` a matching row.
+supported; their values come from the parent. Values set on part of the key go to a new parent Rowsmith creates
+(never shared); when that parent comes from `with(...)`, the values cover its id or a unique key, or the key leads
+back into a cycle, set the whole key or `use(...)` a matching row instead.
 
 Setup several tests need goes in a plain method (look for an existing presets class first):
 `static void overdue(RowSpec t) { t.set(TASK.STATUS, TaskStatus.TODO).set(TASK.DUE_ON, today().minusDays(3)); }`,

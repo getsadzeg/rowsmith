@@ -47,6 +47,10 @@ class MultiColumnForeignKeyTest {
                 CREATE TABLE followup (id serial PRIMARY KEY, main_appointment_id bigint NOT NULL REFERENCES appointment,
                   appointment_id bigint NOT NULL, appointment_status text NOT NULL,
                   FOREIGN KEY (appointment_id, appointment_status) REFERENCES appointment (id, status));
+                CREATE TABLE transfer (id serial PRIMARY KEY, from_appointment_id bigint NOT NULL, from_status text NOT NULL,
+                  to_appointment_id bigint NOT NULL, to_status text NOT NULL,
+                  FOREIGN KEY (from_appointment_id, from_status) REFERENCES appointment (id, status),
+                  FOREIGN KEY (to_appointment_id, to_status) REFERENCES appointment (id, status));
                 ALTER TABLE shift ADD FOREIGN KEY (roster_id, team) REFERENCES roster (id, team) DEFERRABLE INITIALLY DEFERRED;
                 """);
     }
@@ -109,6 +113,19 @@ class MultiColumnForeignKeyTest {
     }
 
     @Test
+    void aUseConflictLeavesOutTheOtherForeignKeyWhenItHasSeveralColumns() {
+        Rowsmith rs = Rowsmith.of(ds);
+        Row booked = rs.create("appointment");
+
+        assertThatThrownBy(() -> rs.plan("transfer", t -> t.use(booked).set("from_status", "completed")))
+                .isInstanceOfSatisfying(RowsmithException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
+                    assertThat(e.detail()).startsWith("use(appointment#" + booked.id() + ") has status = \"booked\", but transfer.from_status"
+                            + " is set to \"completed\"; drop one of them (MultiColumnForeignKeyTest:");
+                });
+    }
+
+    @Test
     void aParentForAPartlySetKeyIsNeverShared() {
         Plan plan = Rowsmith.of(ds).plan("patient", p -> p
                 .with("booking_note", n -> n.set("appointment_status", "cancelled"))
@@ -144,13 +161,18 @@ class MultiColumnForeignKeyTest {
     }
 
     @Test
-    void aRowForTheKeyColumnWithASetValueOnTheSameKeyFails() {
+    void aRowForTheKeyColumnIsCheckedAgainstASetValueOnTheSameKey() {
         Rowsmith rs = Rowsmith.of(ds);
         Row booked = rs.create("appointment");
-        String expected = "review sets only appointment_status of key (appointment_id, appointment_status); set the whole key, or use(...) a matching appointment";
 
-        assertPartOfKey(() -> rs.plan("review", r -> r.set("appointment_id", booked).set("appointment_status", "booked")), expected);
-        assertPartOfKey(() -> rs.plan("review", r -> r.use("appointment_id", booked).set("appointment_status", "booked")), expected);
+        Row viaSet = rs.create("review", r -> r.set("appointment_id", booked).set("appointment_status", "booked"));
+        Row viaUse = rs.create("review", r -> r.use("appointment_id", booked).set("appointment_status", "booked"));
+        assertThat(viaSet.get("appointment_id")).isEqualTo(booked.id());
+        assertThat(viaUse.get("appointment_id")).isEqualTo(booked.id());
+
+        String conflict = "use(appointment#" + booked.id() + ") has status = \"booked\", but review.appointment_status is set to \"completed\"; drop one of them";
+        assertPartOfKey(() -> rs.plan("review", r -> r.set("appointment_id", booked).set("appointment_status", "completed")), conflict);
+        assertPartOfKey(() -> rs.plan("review", r -> r.use("appointment_id", booked).set("appointment_status", "completed")), conflict);
     }
 
     @Test
@@ -162,7 +184,8 @@ class MultiColumnForeignKeyTest {
     @Test
     void aCycleBackToARowInProgressWithPartOfTheKeySetFails() {
         assertPartOfKey(() -> Rowsmith.of(ds).plan("shift", s -> s.set("team", "red")),
-                "roster sets only team of key (shift_id, team); set the whole key, or use(...) a matching shift");
+                "shift#1 sets team, which Rowsmith copies to roster; roster then sets only team of key (shift_id, team);"
+                        + " set the whole key (roster_id, team) on shift, or use(...) a matching roster");
     }
 
     private static void assertPartOfKey(ThrowingCallable call, String message) {
@@ -199,8 +222,8 @@ class MultiColumnForeignKeyTest {
                 .isInstanceOfSatisfying(RowsmithException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.CHECK_VIOLATION);
                     assertThat(e.detail()).startsWith("invoice.appointment_status = \"booked\" violates check invoice_appointment_completed_check")
-                            .contains("[appointment_status comes from appointment.status; set it there or use(...) a matching appointment]")
-                            .doesNotContain("set appointment_status here");
+                            .contains("[appointment_status comes from appointment.status; set it there]")
+                            .doesNotContain("use(...)");
                 });
     }
 }
