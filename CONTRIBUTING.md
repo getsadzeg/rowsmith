@@ -4,47 +4,40 @@ Rowsmith is small on purpose: correct rows and clear errors matter more than fea
 
 ## Build and test
 
-Requirements: Java 21 and a running Docker (tests and code generation use Testcontainers).
+Needs Java 21 and a running Docker (tests and code generation use Testcontainers).
 
 ```bash
-./gradlew build              # all modules, PostgreSQL 17 by default
-./gradlew build -Ppg=16      # another PostgreSQL major (14 to 18); CI runs all five
+./gradlew build              # all modules, PostgreSQL 17
+./gradlew build -Ppg=16      # another major, 14 to 18; CI runs all five
 ./gradlew :rowsmith-core:test --tests '*TrickySchemaTest'
 ```
 
-`rowsmith-core/build/reports/rowsmith/realworld.md` holds the real-world schema coverage table.
+Real-world schema coverage: `rowsmith-core/build/reports/rowsmith/realworld.md`.
 
-## Where things live
+## Layout
 
-- `rowsmith-core`: public API in `io.github.rowsmith`; catalog reader (`internal/schema`), CHECK expression
-  parser and evaluator (`internal/sql`), value generation (`internal/gen`), planner and executor (`internal/plan`).
-- `rowsmith-codegen`: generates the typed `Db` class from a schema. `rowsmith-gradle-plugin`: the `rowsmith { }`
-  block and the `rowsmithGenerate` task.
+- `rowsmith-core`: public API in `io.github.rowsmith`; under `internal/`: catalog reader (`schema`), CHECK
+  parser and evaluator (`sql`), value generation (`gen`), planner and executor (`plan`).
+- `rowsmith-codegen`: the typed `Db` generator. `rowsmith-gradle-plugin`: `rowsmith { }` and `rowsmithGenerate`.
 - `rowsmith-junit`: the `@RowsmithTest` extension.
-- `examples/lending-demo`: a Spring Boot app whose tests use Rowsmith. `benchmark/`: the coding-agent benchmark.
+- `examples/lending-demo`: a Spring Boot app tested with Rowsmith. `benchmark/`: the coding-agent benchmark.
 - `skills/rowsmith`: the Claude Code skill; keep `examples/lending-demo/.claude/skills/rowsmith` identical.
 
-## Adding support for a schema feature
+## Supporting a new schema feature
 
-1. Add a SQL file to `rowsmith-core/src/test/resources/tricky/`. Tables that must fail declare it in a header
-   line: `-- expect <table>: <ERROR_CODE>`.
-2. Run `TrickySchemaTest`: every table must seed or fail with the declared, documented error.
-3. For real-world CHECKs, add a case to `rowsmith-core/src/test/resources/checks/` with its `-- case:`,
-   `-- source:` and `-- license:` header, plus `-- expect: CLEAR_ERROR` when Rowsmith should ask for values and
-   `-- requires: PostgreSQL <major>` when the CHECK behaves differently on older servers.
-4. If plan output changes on purpose, delete `rowsmith-core/src/test/resources/snapshots/lending-plan.sql` and
-   rerun `DeterminismTest`, which writes it again.
-5. If generated code changes on purpose, refresh the golden `Db.java` files: `./gradlew :rowsmith-codegen:test -PupdateGolden`.
+1. Add a SQL file to `rowsmith-core/src/test/resources/tricky/`; tables that must fail say so in a header line:
+   `-- expect <table>: <ERROR_CODE>`. `TrickySchemaTest` checks every table seeds or fails as declared.
+2. For a real-world CHECK, add a case to `rowsmith-core/src/test/resources/checks/` with `-- case:`, `-- source:`
+   and `-- license:` headers, plus `-- expect: CLEAR_ERROR` when Rowsmith should ask for values and
+   `-- requires: PostgreSQL <major>` when older servers behave differently.
+3. Plan output changed on purpose: delete `rowsmith-core/src/test/resources/snapshots/lending-plan.sql` and rerun
+   `DeterminismTest` to rewrite it.
+4. Generated code changed on purpose: `./gradlew :rowsmith-codegen:test -PupdateGolden`.
 
-## Error messages
+## Errors and pull requests
 
-Every new failure path throws `RowsmithException` with an `ErrorCode`, names the table, column and constraint,
-says what is allowed, and is covered by a test. Document new codes in `docs/errors.md`.
+New failure paths throw `RowsmithException` with an `ErrorCode`, name the table, column and constraint, say what
+is allowed, have a test, and are documented in `docs/errors.md`. Keep pull requests focused, with tests and a
+`CHANGELOG.md` entry for user-visible changes.
 
-## Pull requests
-
-Keep changes focused, add tests, and describe the user-visible effect in `CHANGELOG.md`.
-
-## License
-
-By contributing you agree that your contributions are licensed under the [MIT License](LICENSE).
+By contributing you agree to license your contributions under the [MIT License](LICENSE).
