@@ -14,6 +14,8 @@ javapoet = "0.12.0"
 errorprone = "2.53.0"
 errorprone-plugin = "5.2.0"
 pmd = "7.29.0"
+maven-publish = "0.37.0"
+plugin-publish = "2.2.1"
 
 [libraries]
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
@@ -39,3 +41,5 @@ errorprone-core = { module = "com.google.errorprone:error_prone_core", version.r
 
 [plugins]
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
+plugin-publish = { id = "com.gradle.plugin-publish", version.ref = "plugin-publish" }

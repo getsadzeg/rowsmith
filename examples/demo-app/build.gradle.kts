@@ -13,7 +13,7 @@ java {
 // Inside the Rowsmith repo this uses the modules directly; a standalone copy resolves
 // published artifacts (./gradlew publishToMavenLocal in the Rowsmith repo).
 val inRowsmithRepo = rootProject.name == "rowsmith"
-val rowsmithVersion = "0.1.0-SNAPSHOT"
+val rowsmithVersion = "0.1.0"
 
 repositories {
     mavenLocal()

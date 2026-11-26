@@ -1,6 +1,6 @@
 plugins {
     `java-gradle-plugin`
-    `maven-publish`
+    alias(libs.plugins.plugin.publish)
 }
 
 description = "Gradle plugin: generates Rowsmith's typed table and column constants for the test source set."
@@ -15,12 +15,15 @@ dependencies {
 }
 
 gradlePlugin {
+    website = "https://github.com/getsadzeg/rowsmith"
+    vcsUrl = "https://github.com/getsadzeg/rowsmith.git"
     plugins {
         create("rowsmith") {
             id = "io.github.getsadzeg.rowsmith"
             implementationClass = "rowsmith.gradle.RowsmithPlugin"
             displayName = "Rowsmith"
             description = project.description
+            tags = listOf("testing", "test-data", "postgresql", "codegen", "junit", "flyway")
         }
     }
 }

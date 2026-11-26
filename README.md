@@ -56,9 +56,9 @@ Not on Maven Central yet: run `./gradlew publishToMavenLocal` in this repository
 pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }
 
 // build.gradle.kts
-plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0-SNAPSHOT" }
+plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0" }
 repositories { mavenLocal(); mavenCentral() }
-dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0-SNAPSHOT") }
+dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0") }
 
 rowsmith {
     packageName = "com.example.db"   // generates com.example.db.Db (TASK, TASK.STATUS, ...) from your Flyway migrations

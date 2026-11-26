@@ -1,33 +1,47 @@
+import com.vanniktech.maven.publish.MavenPublishBaseExtension
 import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
     `java-library`
     alias(libs.plugins.errorprone) apply false
+    alias(libs.plugins.maven.publish) apply false
+    alias(libs.plugins.plugin.publish) apply false
 }
 
 allprojects {
     group = "io.github.getsadzeg"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.1.0"
 }
 
 subprojects {
     apply(plugin = "java")
-    // the Gradle plugin module publishes through java-gradle-plugin
-    if (path.startsWith(":rowsmith-") && path != ":rowsmith-gradle-plugin") {
-        apply(plugin = "maven-publish")
-        extensions.configure<PublishingExtension> {
-            publications.create<MavenPublication>("maven") {
-                from(components["java"])
-                pom {
-                    name.set(project.name)
-                    description.set(project.description)
-                    url.set("https://github.com/getsadzeg/rowsmith")
-                    licenses {
-                        license {
-                            name.set("MIT")
-                            url.set("https://opensource.org/license/mit")
-                        }
+    if (path.startsWith(":rowsmith-")) {
+        apply(plugin = "com.vanniktech.maven.publish")
+        extensions.configure<MavenPublishBaseExtension> {
+            publishToMavenCentral()
+            signAllPublications()
+            pom {
+                name.set(project.name)
+                description.set(provider { project.description })
+                url.set("https://github.com/getsadzeg/rowsmith")
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/license/mit")
+                        distribution.set("repo")
                     }
+                }
+                developers {
+                    developer {
+                        id.set("getsadzeg")
+                        name.set("Guri Getsadze")
+                        url.set("https://github.com/getsadzeg")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/getsadzeg/rowsmith")
+                    connection.set("scm:git:git://github.com/getsadzeg/rowsmith.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/getsadzeg/rowsmith.git")
                 }
             }
         }
@@ -35,8 +49,6 @@ subprojects {
 
     extensions.configure<JavaPluginExtension> {
         toolchain.languageVersion.set(JavaLanguageVersion.of(21))
-        withSourcesJar()
-        withJavadocJar()
     }
 
     tasks.withType<JavaCompile>().configureEach {

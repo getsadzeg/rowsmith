@@ -13,8 +13,8 @@ migrations that add columns, CHECKs or foreign keys, so never hand-write parent 
 ## Setup
 
 ```kotlin
-plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0-SNAPSHOT" }
-dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0-SNAPSHOT") }
+plugins { id("io.github.getsadzeg.rowsmith") version "0.1.0" }
+dependencies { testImplementation("io.github.getsadzeg:rowsmith-junit:0.1.0") }
 rowsmith { packageName = "com.example.db" }
 ```
 
