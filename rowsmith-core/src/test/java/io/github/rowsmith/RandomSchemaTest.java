@@ -5,17 +5,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
-import net.jqwik.api.ForAll;
-import net.jqwik.api.Property;
-import net.jqwik.api.constraints.IntRange;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
-class RandomSchemaPropertyTest {
+class RandomSchemaTest {
 
     record Generated(String ddl, List<String> tables, boolean cycle) {}
 
-    @Property(tries = 60)
-    void randomSchemasSeedOrFailWithDefinedError(@ForAll @IntRange(min = 1, max = 1_000_000) int schemaSeed) {
+    static IntStream seeds() {
+        return IntStream.rangeClosed(1, 60);
+    }
+
+    @ParameterizedTest
+    @MethodSource("seeds")
+    void randomSchemasSeedOrFailWithDefinedError(int schemaSeed) {
         Generated g = generate(new Random(schemaSeed));
         DataSource ds = Pg.withSchema(g.ddl());
         Rowsmith rs = Rowsmith.of(ds);

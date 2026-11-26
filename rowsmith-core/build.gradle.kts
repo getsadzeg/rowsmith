@@ -16,14 +16,12 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.launcher)
     testImplementation(libs.assertj)
-    testImplementation(libs.jqwik)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.spring.jdbc)
     testRuntimeOnly(libs.slf4j.simple)
 }
 
 tasks.test {
-    systemProperty("jqwik.reporting.onlyFailures", "true")
     systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn")
     // Real-world schema coverage report lands here.
     systemProperty("rowsmith.test.reportDir", layout.buildDirectory.dir("reports/rowsmith").get().asFile.absolutePath)

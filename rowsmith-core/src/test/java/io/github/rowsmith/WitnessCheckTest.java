@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
-import net.jqwik.api.ForAll;
-import net.jqwik.api.Property;
-import net.jqwik.api.constraints.IntRange;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
-class WitnessCheckPropertyTest {
+class WitnessCheckTest {
 
     enum Kind { INT, NUMERIC, TEXT, VARCHAR, DATE, BOOL }
 
@@ -24,8 +24,13 @@ class WitnessCheckPropertyTest {
 
     record Schema(String ddl, String witnessInsert, List<String> checks) {}
 
-    @Property(tries = 60)
-    void checksWithAWitnessSeedOrFailClearly(@ForAll @IntRange(min = 1, max = 1_000_000) int seed) {
+    static IntStream seeds() {
+        return IntStream.rangeClosed(1, 60);
+    }
+
+    @ParameterizedTest
+    @MethodSource("seeds")
+    void checksWithAWitnessSeedOrFailClearly(int seed) {
         Schema s = generate(new Random(seed));
         DataSource ds = Pg.withSchema(s.ddl());
         Pg.exec(ds, s.witnessInsert() + "; DELETE FROM w;");
