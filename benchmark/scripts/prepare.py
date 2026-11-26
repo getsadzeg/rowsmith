@@ -48,7 +48,7 @@ def prepare(task_id, condition, dest):
         shutil.copy(DEMO / "src/test/java/com/example/lending/Presets.java", test_root)
         shutil.copytree(REPO / "skills" / "rowsmith", dest / ".claude" / "skills" / "rowsmith")
     (dest / "build.gradle.kts").write_text(build_file(condition))
-    (dest / "settings.gradle.kts").write_text('rootProject.name = "lending-demo"\n')
+    (dest / "settings.gradle.kts").write_text('rootProject.name = "demo-app"\n')
     shutil.copy(REPO / "gradlew", dest / "gradlew")
     shutil.copytree(REPO / "gradle" / "wrapper", dest / "gradle" / "wrapper")
     (dest / ".gitignore").write_text(".gradle/\nbuild/\n")

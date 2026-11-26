@@ -7,7 +7,7 @@ import subprocess
 
 BENCH = pathlib.Path(__file__).resolve().parent.parent
 REPO = BENCH.parent
-DEMO = REPO / "examples" / "lending-demo"
+DEMO = REPO / "examples" / "demo-app"
 ROUND_DIR = BENCH / "schema-changes"
 TASKS = json.loads((ROUND_DIR / "tasks.json").read_text())
 RESULTS = BENCH / "results" / "schema-changes"

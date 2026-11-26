@@ -5,7 +5,7 @@ Tasks, hidden oracles, harness, raw results and the summary script are all here.
 
 ## Setup
 
-- **App:** `examples/lending-demo` (Spring Boot 4.1, Java 21, Flyway, PostgreSQL via Testcontainers) plus
+- **App:** `examples/demo-app` (Spring Boot 4.1, Java 21, Flyway, PostgreSQL via Testcontainers) plus
   `schema-changes/overlay`, whose `V2__underwriting_payments_collections.sql` brings it to 21 tables
   (credit_application → credit_decision → offer → loan, payments, collections) with 4-5 level FK chains,
   cross-column and regex CHECKs, composite and partial unique indexes, and two services,
