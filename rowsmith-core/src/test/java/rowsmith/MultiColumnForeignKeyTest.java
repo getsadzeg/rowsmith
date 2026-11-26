@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import javax.sql.DataSource;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,15 @@ class MultiColumnForeignKeyTest {
                 CREATE TABLE visit_note (id serial PRIMARY KEY, visit_id bigint NOT NULL, visit_kind text NOT NULL,
                   CONSTRAINT visit_note_scheduled_check CHECK (md5(visit_kind) = md5('scheduled')),
                   FOREIGN KEY (visit_id, visit_kind) REFERENCES visit (id, kind));
+                CREATE TABLE bundle (id serial PRIMARY KEY, review_id int NOT NULL, invoice_id bigint NOT NULL,
+                  CONSTRAINT bundle_a_review_fkey FOREIGN KEY (review_id) REFERENCES review,
+                  CONSTRAINT bundle_b_invoice_fkey FOREIGN KEY (invoice_id) REFERENCES invoice);
+                CREATE TABLE emp (id serial PRIMARY KEY, dept text NOT NULL, mgr_id int NOT NULL, mgr_dept text NOT NULL,
+                  UNIQUE (id, dept), FOREIGN KEY (mgr_id, mgr_dept) REFERENCES emp (id, dept) DEFERRABLE INITIALLY DEFERRED);
+                CREATE TABLE shift (id serial PRIMARY KEY, team text NOT NULL, roster_id int NOT NULL, UNIQUE (id, team));
+                CREATE TABLE roster (id serial PRIMARY KEY, team text NOT NULL, shift_id int NOT NULL, UNIQUE (id, team),
+                  FOREIGN KEY (shift_id, team) REFERENCES shift (id, team));
+                ALTER TABLE shift ADD FOREIGN KEY (roster_id, team) REFERENCES roster (id, team) DEFERRABLE INITIALLY DEFERRED;
                 """);
     }
 
@@ -77,19 +87,73 @@ class MultiColumnForeignKeyTest {
         assertThatThrownBy(() -> rs.create("invoice", i -> i.use(booked).set("appointment_status", "completed")))
                 .isInstanceOfSatisfying(RowsmithException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
-                    assertThat(e.getMessage()).isEqualTo("Rowsmith: use(appointment#" + booked.id() + ") has status = booked, but invoice.appointment_status"
-                            + " is set to completed; drop one of them (MultiColumnForeignKeyTest:77)");
+                    assertThat(e.getMessage()).startsWith("Rowsmith: use(appointment#" + booked.id() + ") has status = booked, but invoice.appointment_status"
+                            + " is set to completed; drop one of them (MultiColumnForeignKeyTest:");
                 });
     }
 
     @Test
-    void anAutoSharedParentIsSharedOnlyWhenItMatchesTheValuesSetOnTheKey() {
+    void aParentForAPartlySetKeyIsNeverShared() {
         Plan plan = Rowsmith.of(ds).plan("patient", p -> p
                 .with("booking_note", n -> n.set("appointment_status", "cancelled"))
                 .with("booking_note", n -> n.set("appointment_status", "cancelled"))
                 .with("booking_note", n -> n.set("appointment_status", "completed")));
 
-        assertThat(plan.rows()).filteredOn(r -> r.table().equals("appointment")).hasSize(2);
+        assertThat(plan.rows()).filteredOn(r -> r.table().equals("appointment")).hasSize(3);
+    }
+
+    @Test
+    void aParentIsNotSharedWhenTheChildHasChecksOnTheKey() {
+        Row bundle = Rowsmith.of(ds).create("bundle");
+
+        Row invoice = bundle.parent("invoice");
+        assertThat(invoice.parent("appointment").getString("status")).isEqualTo("completed");
+        assertThat(invoice.parent("appointment").id()).isNotEqualTo(bundle.parent("review").get("appointment_id"));
+    }
+
+    @Test
+    void settingOnlyTheParentsIdFails() {
+        Rowsmith rs = Rowsmith.of(ds);
+        Row existing = rs.create("appointment");
+
+        assertPartOfKey(() -> rs.plan("review", r -> r.set("appointment_id", existing.id())),
+                "review sets only appointment_id of key (appointment_id, appointment_status); set the whole key, or use(...) a matching appointment");
+    }
+
+    @Test
+    void aWithChildThatSetsPartOfTheKeyFails() {
+        assertPartOfKey(() -> Rowsmith.of(ds).plan("appointment", a -> a.with("invoice", 1, i -> i.set("appointment_status", "completed"))),
+                "invoice sets only appointment_status of key (appointment_id, appointment_status), which with(...) fills from appointment#1;"
+                        + " set status on the appointment instead");
+    }
+
+    @Test
+    void aRowForTheKeyColumnWithASetValueOnTheSameKeyFails() {
+        Rowsmith rs = Rowsmith.of(ds);
+        Row booked = rs.create("appointment");
+        String expected = "review sets only appointment_status of key (appointment_id, appointment_status); set the whole key, or use(...) a matching appointment";
+
+        assertPartOfKey(() -> rs.plan("review", r -> r.set("appointment_id", booked).set("appointment_status", "booked")), expected);
+        assertPartOfKey(() -> rs.plan("review", r -> r.use("appointment_id", booked).set("appointment_status", "booked")), expected);
+    }
+
+    @Test
+    void aSelfReferenceWithPartOfTheKeySetFails() {
+        assertPartOfKey(() -> Rowsmith.of(ds).plan("emp", e -> e.set("mgr_dept", "sales")),
+                "emp sets only mgr_dept of key (mgr_id, mgr_dept); set the whole key, or use(...) a matching emp");
+    }
+
+    @Test
+    void aCycleBackToARowInProgressWithPartOfTheKeySetFails() {
+        assertPartOfKey(() -> Rowsmith.of(ds).plan("shift", s -> s.set("team", "red")),
+                "roster sets only team of key (shift_id, team); set the whole key, or use(...) a matching shift");
+    }
+
+    private static void assertPartOfKey(ThrowingCallable call, String message) {
+        assertThatThrownBy(call).isInstanceOfSatisfying(RowsmithException.class, e -> {
+            assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
+            assertThat(e.detail()).startsWith(message + " (MultiColumnForeignKeyTest:");
+        });
     }
 
     @Test

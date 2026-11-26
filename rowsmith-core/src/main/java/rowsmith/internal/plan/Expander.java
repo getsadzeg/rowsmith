@@ -168,10 +168,14 @@ final class Expander {
 
     private void resolveFk(Node n, ForeignKey fk) {
         if (fk == n.relFk()) {
+            if (setsPartOfKey(n, fk)) throw withChildSetsPartOfKey(n, fk);
             n.link(fk, new Ref.Planned(n.related));
             return;
         }
-        if (n.refs().containsKey(fk)) return;
+        if (n.refs().containsKey(fk)) {
+            if (setsPartOfKey(n, fk)) throw partOfKey(n, fk);
+            return;
+        }
         if (specSetsWholeKey(n, fk)) return;
         for (Row r : n.uses) {
             if (r.qualifiedTable().equals(fk.refTable().qualifiedName()) && matchesSetValues(n, fk, c -> new Cell.Known(r.values().get(c.name)))) {
@@ -181,30 +185,10 @@ final class Expander {
         }
         for (Row r : n.ownUses) if (r.qualifiedTable().equals(fk.refTable().qualifiedName())) throw useConflict(n, fk, r);
         if (!fk.required()) return;
-        Node shared = findShared(n, fk);
-        if (shared != null) {
-            n.link(fk, new Ref.Planned(shared));
-            n.autoShared.add(fk);
+        if (setsPartOfKey(n, fk)) {
+            if (fk.isSelfReference() || inProgress(fk) != null || newParentWouldRepeatAKey(n, fk)) throw partOfKey(n, fk);
+        } else if (linkedWithoutNewParent(n, fk)) {
             return;
-        }
-        if (fk.isSelfReference()) {
-            n.link(fk, new Ref.Planned(n));
-            n.deferred.add(fk);
-            return;
-        }
-        Node inProgress = null;
-        for (Node s : stack) if (s.table == fk.refTable()) { inProgress = s; break; }
-        if (inProgress != null) {
-            if (fk.deferrable) {
-                n.link(fk, new Ref.Planned(inProgress));
-                n.deferred.add(fk);
-                return;
-            }
-            if (deferAncestorEdge(n, inProgress)) {
-                n.link(fk, new Ref.Planned(inProgress));
-                return;
-            }
-            throw cycleError(fk);
         }
         resolving.put(n, fk);
         try {
@@ -212,6 +196,65 @@ final class Expander {
         } finally {
             resolving.remove(n);
         }
+    }
+
+    private boolean linkedWithoutNewParent(Node n, ForeignKey fk) {
+        Node shared = findShared(n, fk);
+        if (shared != null) {
+            n.link(fk, new Ref.Planned(shared));
+            n.autoShared.add(fk);
+            return true;
+        }
+        if (fk.isSelfReference()) {
+            n.link(fk, new Ref.Planned(n));
+            n.deferred.add(fk);
+            return true;
+        }
+        Node inProgress = inProgress(fk);
+        if (inProgress == null) return false;
+        if (fk.deferrable) {
+            n.link(fk, new Ref.Planned(inProgress));
+            n.deferred.add(fk);
+            return true;
+        }
+        if (deferAncestorEdge(n, inProgress)) {
+            n.link(fk, new Ref.Planned(inProgress));
+            return true;
+        }
+        throw cycleError(fk);
+    }
+
+    private Node inProgress(ForeignKey fk) {
+        for (Node s : stack) if (s.table == fk.refTable()) return s;
+        return null;
+    }
+
+    private static boolean setsPartOfKey(Node n, ForeignKey fk) {
+        return fk.columns.size() > 1 && !specSetsWholeKey(n, fk) && fk.columns.stream().anyMatch(c -> n.assignment(c) instanceof Assignment.Value);
+    }
+
+    private static boolean newParentWouldRepeatAKey(Node n, ForeignKey fk) {
+        Set<ColumnDef> given = new HashSet<>();
+        for (int i = 0; i < fk.columns.size(); i++) if (n.assignment(fk.columns.get(i)) instanceof Assignment.Value) given.add(fk.refColumns().get(i));
+        if (given.stream().anyMatch(c -> c.isIdentity() || c.drawsFromSequence())) return true;
+        return fk.refTable().uniqueKeys.stream().anyMatch(uk -> !uk.isPartial() && uk.isPlainColumns() && given.containsAll(uk.columns));
+    }
+
+    private static List<String> setKeyColumns(Node n, ForeignKey fk) {
+        return fk.columns.stream().filter(c -> n.assignment(c) instanceof Assignment.Value).map(c -> c.name).toList();
+    }
+
+    private static RowsmithException partOfKey(Node n, ForeignKey fk) {
+        return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, n.table.displayName() + " sets only " + String.join(", ", setKeyColumns(n, fk))
+                + " of key (" + fk.columnList() + "); set the whole key, or use(...) a matching " + fk.refTable().displayName());
+    }
+
+    private static RowsmithException withChildSetsPartOfKey(Node n, ForeignKey fk) {
+        List<String> parentColumns = new ArrayList<>();
+        for (int i = 0; i < fk.columns.size(); i++) if (n.assignment(fk.columns.get(i)) instanceof Assignment.Value) parentColumns.add(fk.refColumns().get(i).name);
+        return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, n.table.displayName() + " sets only " + String.join(", ", setKeyColumns(n, fk))
+                + " of key (" + fk.columnList() + "), which with(...) fills from " + n.related.label + "; set " + String.join(", ", parentColumns)
+                + " on the " + fk.refTable().displayName() + " instead");
     }
 
     private boolean deferAncestorEdge(Node n, Node inProgress) {
@@ -283,10 +326,11 @@ final class Expander {
     }
 
     private Node findShared(Node n, ForeignKey fk) {
+        if (fk.columns.size() > 1 && fk.columns.stream().anyMatch(c -> !n.rulesFor(c).isEmpty())) return null;
         TableDef target = fk.refTable();
         for (Node m : nodes) {
             if (m == n || m.table != target || stack.contains(m) || !m.resolved) continue;
-            if (dependsOn(m, n, new HashSet<>()) || !matchesSetValues(n, fk, m::cell)) continue;
+            if (dependsOn(m, n, new HashSet<>())) continue;
             if (sharingKeepsKeysUnique(n, fk, m)) return m;
         }
         return null;
