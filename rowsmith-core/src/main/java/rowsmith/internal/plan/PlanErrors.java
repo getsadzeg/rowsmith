@@ -154,7 +154,7 @@ final class PlanErrors {
         return v instanceof Cell.Known k ? show(k.value()) : "?";
     }
 
-    private static String show(Object v) {
+    static String show(Object v) {
         if (v == null) return "NULL";
         if (v instanceof String s) return "\"" + s + "\"";
         if (v instanceof BigDecimal b) return b.toPlainString();

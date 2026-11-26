@@ -9,8 +9,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
-import java.util.function.Function;
 import rowsmith.ErrorCode;
 import rowsmith.Row;
 import rowsmith.RowSpec;
@@ -178,12 +178,12 @@ final class Expander {
         }
         if (specSetsWholeKey(n, fk)) return;
         for (Row r : n.uses) {
-            if (r.qualifiedTable().equals(fk.refTable().qualifiedName()) && matchesSetValues(n, fk, c -> new Cell.Known(r.values().get(c.name)))) {
+            if (r.qualifiedTable().equals(fk.refTable().qualifiedName()) && firstMismatch(n, fk, r).isEmpty()) {
                 n.link(fk, new Ref.Existing(r));
                 return;
             }
         }
-        for (Row r : n.ownUses) if (r.qualifiedTable().equals(fk.refTable().qualifiedName())) throw useConflict(n, fk, r);
+        for (Row r : n.ownUses) if (r.qualifiedTable().equals(fk.refTable().qualifiedName())) throw useConflict(n, fk, r, firstMismatch(n, fk, r).orElseThrow());
         if (!fk.required()) return;
         if (setsPartOfKey(n, fk)) {
             if (fk.isSelfReference() || inProgress(fk) != null || newParentWouldRepeatAKey(n, fk)) throw partOfKey(n, fk);
@@ -275,25 +275,26 @@ final class Expander {
                 || fk.columns.stream().allMatch(c -> n.assignment(c) instanceof Assignment.Value);
     }
 
-    private static boolean matchesSetValues(Node n, ForeignKey fk, Function<ColumnDef, Cell> parentCell) {
+    private static OptionalInt firstMismatch(Node n, ForeignKey fk, Row used) {
         for (int i = 0; i < fk.columns.size(); i++) {
-            if (!(n.assignment(fk.columns.get(i)) instanceof Assignment.Value v)) continue;
-            if (!(parentCell.apply(fk.refColumns().get(i)) instanceof Cell.Known(Object p)) || !Boolean.TRUE.equals(SqlValues.equal(v.value(), p))) return false;
+            if (n.assignment(fk.columns.get(i)) instanceof Assignment.Value v
+                    && !Boolean.TRUE.equals(SqlValues.equal(v.value(), used.values().get(fk.refColumns().get(i).name)))) return OptionalInt.of(i);
         }
-        return true;
+        return OptionalInt.empty();
     }
 
-    private static RowsmithException useConflict(Node n, ForeignKey fk, Row used) {
-        for (int i = 0; i < fk.columns.size(); i++) {
-            ColumnDef childColumn = fk.columns.get(i);
-            ColumnDef parentColumn = fk.refColumns().get(i);
-            if (!(n.assignment(childColumn) instanceof Assignment.Value v)) continue;
-            Object p = used.values().get(parentColumn.name);
-            if (Boolean.TRUE.equals(SqlValues.equal(v.value(), p))) continue;
-            return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, "use(" + rowLabel(fk.refTable(), used) + ") has " + parentColumn.name + " = " + p
-                    + ", but " + n.table.displayName() + "." + childColumn.name + " is set to " + v.value() + "; drop one of them");
+    private static RowsmithException useConflict(Node n, ForeignKey fk, Row used, int i) {
+        ColumnDef childColumn = fk.columns.get(i);
+        ColumnDef parentColumn = fk.refColumns().get(i);
+        Object set = ((Assignment.Value) n.assignment(childColumn)).value();
+        List<String> otherKeys = new ArrayList<>();
+        for (ForeignKey other : n.table.foreignKeys) {
+            if (other != fk && other.refTable() == fk.refTable()) otherKeys.add("use(\"" + other.columns.get(0).name + "\", row)");
         }
-        throw new IllegalStateException("no conflicting column on " + fk.describe());
+        return new RowsmithException(ErrorCode.INVALID_RELATIONSHIP, "use(" + rowLabel(fk.refTable(), used) + ") has " + parentColumn.name + " = "
+                + PlanErrors.show(used.values().get(parentColumn.name)) + ", but " + n.table.displayName() + "." + childColumn.name + " is set to "
+                + PlanErrors.show(set) + "; drop one of them"
+                + (otherKeys.isEmpty() ? "" : ", or pass the row for the other key with " + String.join(" or ", otherKeys)));
     }
 
     private static String rowLabel(TableDef t, Row r) {

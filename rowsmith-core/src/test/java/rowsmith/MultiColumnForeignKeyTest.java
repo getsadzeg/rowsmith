@@ -44,6 +44,9 @@ class MultiColumnForeignKeyTest {
                 CREATE TABLE shift (id serial PRIMARY KEY, team text NOT NULL, roster_id int NOT NULL, UNIQUE (id, team));
                 CREATE TABLE roster (id serial PRIMARY KEY, team text NOT NULL, shift_id int NOT NULL, UNIQUE (id, team),
                   FOREIGN KEY (shift_id, team) REFERENCES shift (id, team));
+                CREATE TABLE followup (id serial PRIMARY KEY, main_appointment_id bigint NOT NULL REFERENCES appointment,
+                  appointment_id bigint NOT NULL, appointment_status text NOT NULL,
+                  FOREIGN KEY (appointment_id, appointment_status) REFERENCES appointment (id, status));
                 ALTER TABLE shift ADD FOREIGN KEY (roster_id, team) REFERENCES roster (id, team) DEFERRABLE INITIALLY DEFERRED;
                 """);
     }
@@ -87,8 +90,21 @@ class MultiColumnForeignKeyTest {
         assertThatThrownBy(() -> rs.create("invoice", i -> i.use(booked).set("appointment_status", "completed")))
                 .isInstanceOfSatisfying(RowsmithException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
-                    assertThat(e.getMessage()).startsWith("Rowsmith: use(appointment#" + booked.id() + ") has status = booked, but invoice.appointment_status"
-                            + " is set to completed; drop one of them (MultiColumnForeignKeyTest:");
+                    assertThat(e.getMessage()).startsWith("Rowsmith: use(appointment#" + booked.id() + ") has status = \"booked\", but invoice.appointment_status"
+                            + " is set to \"completed\"; drop one of them (MultiColumnForeignKeyTest:");
+                });
+    }
+
+    @Test
+    void aUseConflictNamesTheOtherForeignKeyToTheSameTable() {
+        Rowsmith rs = Rowsmith.of(ds);
+        Row booked = rs.create("appointment");
+
+        assertThatThrownBy(() -> rs.plan("followup", f -> f.use(booked).set("appointment_status", "completed")))
+                .isInstanceOfSatisfying(RowsmithException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.INVALID_RELATIONSHIP);
+                    assertThat(e.detail()).startsWith("use(appointment#" + booked.id() + ") has status = \"booked\", but followup.appointment_status"
+                            + " is set to \"completed\"; drop one of them, or pass the row for the other key with use(\"main_appointment_id\", row)");
                 });
     }
 
